@@ -1,24 +1,17 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
-
-from app.core.config import settings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-engine = create_engine(settings.DATABASE_URL)
+class Settings(BaseSettings):
+    APP_NAME: str = "TranscriptsKE"
+    APP_ENV: str = "development"
+    DATABASE_URL: str
+    SECRET_KEY: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-)
-
-Base = declarative_base()
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
 
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
+settings = Settings()
