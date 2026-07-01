@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 
+from app.core.config import settings
+
 app = FastAPI(
-    title="TranscriptsKE API",
+    title=f"{settings.APP_NAME} API",
     description="Academic transcript request and verification platform for Kenya.",
     version="0.1.0",
 )
@@ -9,9 +11,17 @@ app = FastAPI(
 
 @app.get("/")
 def root():
-    return {"message": " Welcome to Transcripts Kenya"}
+    return {
+        "message": f"Welcome to {settings.APP_NAME}",
+        "environment": settings.APP_ENV,
+        "status": "running",
+    }
 
 
 @app.get("/health")
 def health_check():
-    return {"status": "app running"}
+    return {
+        "status": "ok",
+        "app": settings.APP_NAME,
+        "environment": settings.APP_ENV,
+    }
