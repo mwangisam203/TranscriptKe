@@ -27,6 +27,7 @@ def register_user(payload: UserRegister, db: Session = Depends(get_db)):
 
     user = User(
         email=payload.email,
+        is_email_verified=True,
         password_hash=get_password_hash(payload.password),
         full_name=payload.full_name,
         role=UserRole.STUDENT,
