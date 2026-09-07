@@ -14,6 +14,7 @@ def list_institutions(db: Session = Depends(get_db)):
     statement = (
         select(Institution)
         .where(Institution.is_active.is_(True))
+        .where(Institution.is_approved.is_(True))
         .order_by(Institution.name)
     )
 
@@ -23,7 +24,7 @@ def list_institutions(db: Session = Depends(get_db)):
 @router.get("/{institution_id}", response_model=InstitutionRead)
 def read_institution(institution_id: int, db: Session = Depends(get_db)):
     institution = db.get(Institution, institution_id)
-    if institution is None or not institution.is_active:
+    if institution is None or not institution.is_active or not institution.is_approved:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Institution not found",
