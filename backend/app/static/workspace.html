@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TranscriptsKE · Academic records</title>
+  <link rel="stylesheet" href="/workspace/assets/workspace.css">
+  <script src="/workspace/assets/workspace.js" defer></script>
+</head>
+<body>
+<header><a class="brand" href="/workspace">Transcripts<span>KE</span></a><span>Academic records, with confidence.</span><button id="logout" hidden>Sign out</button></header>
+<main>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <section id="authentication" class="grid">
+    <div class="intro"><p class="eyebrow">YOUR ACADEMIC JOURNEY</p><h1>Connect with your institution.</h1><p>Explore available documents and have your institution confirm your academic record.</p><p class="muted">This release supports record matching. Transcript orders, payments and delivery come next.</p></div>
+    <div class="panel"><h2>Welcome</h2>
+      <form id="login-form"><h3>Sign in</h3><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button>Sign in</button></form>
+      <details><summary>Create a student account</summary><form id="register-form"><label>Full name<input name="full_name" autocomplete="name" required maxlength="255"></label><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label><button>Create account</button></form></details>
+      <details><summary>Verify your email</summary><form id="verify-form"><label>Verification code<input name="token" required autocomplete="one-time-code"></label><button>Verify email</button></form><form id="resend-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><button class="secondary">Send another code</button></form></details>
+      <details><summary>Reset your password</summary><form id="reset-request-form"><label>Email<input name="email" type="email" required></label><button class="secondary">Send reset code</button></form><form id="reset-form"><label>Reset code<input name="token" required autocomplete="one-time-code"></label><label>New password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label><button>Reset password</button></form></details>
+    </div>
+  </section>
+  <section id="workspace" hidden>
+    <div class="page-title"><div><p class="eyebrow">YOUR WORKSPACE</p><h1 id="welcome">Academic records</h1></div></div>
+    <nav aria-label="Workspace sections"><button data-view="student-view">My records</button><button data-view="staff-view" id="staff-tab" hidden>Institution workspace</button><button data-view="admin-view" id="admin-tab" hidden>Institution approvals</button></nav>
+    <section id="student-view">
+      <div class="grid">
+        <div class="panel"><h2 id="record-form-title">Link an academic record</h2><p>Choose an institution and document service. Staff will check your details against their records before confirming ownership.</p>
+          <form id="record-form"><label>Institution<select name="institution_id" id="student-institution" required></select></label><label>Document service<select name="service_id" id="student-service" required></select></label><p id="service-summary" class="muted"></p><p id="ordering-instructions"></p>
+            <label>Admission number<input name="admission_number" required maxlength="100"></label><label>Name on academic record<input name="name_on_record" required maxlength="255"></label>
+            <label>Program <span id="program-requirement">(optional)</span><input name="program" maxlength="255"></label>
+            <div class="row"><label>First attendance year<input name="attendance_start_year" type="number" min="1900"></label><label>Last attendance year<input name="attendance_end_year" type="number" min="1900"></label></div>
+            <label>Previous names <span id="names-requirement">(optional)</span><textarea name="previous_names" rows="2" placeholder="One name per line; leave blank if none"></textarea></label>
+            <p class="muted">Only provide details relevant to locating your academic record. Do not enter identity document numbers or financial information.</p><button id="record-submit">Submit for matching</button><button id="cancel-resubmit" type="button" class="secondary" hidden>Cancel revision</button>
+          </form>
+        </div>
+        <div class="panel"><div class="row"><h2>My record links</h2><button id="refresh-links" class="secondary">Refresh</button></div><div id="my-links"></div><button id="more-links" class="secondary" hidden>Load more</button><div id="student-history"></div></div>
+      </div>
+      <details class="panel"><summary>Accept a staff invitation</summary><form id="accept-invitation-form"><label>Invitation code<input name="token" required autocomplete="one-time-code"></label><button>Accept invitation</button></form></details>
+    </section>
+    <section id="staff-view" hidden>
+      <label class="institution-picker">Your institution<select id="staff-institution"></select></label><p id="staff-institution-status" class="muted"></p>
+      <div class="panel"><div class="row"><h2>Academic record matching</h2><label>Status<select id="match-filter"><option value="pending">Awaiting review</option><option value="needs_information">Needs information</option><option value="matched">Matched</option><option value="rejected">Rejected</option><option value="">All</option></select></label><button id="refresh-matches" class="secondary">Refresh</button></div><div id="match-list"></div><button id="more-matches" class="secondary" hidden>Load more</button><div id="review-area" hidden><h3 id="review-title"></h3><div id="review-details"></div><div id="review-history"></div>
+        <form id="decision-form"><label>Decision<select name="decision"><option value="needs_information">Request more information</option><option value="matched">Confirm record ownership</option><option value="rejected">Reject matching request</option></select></label><label>Message to student<textarea name="student_message" required maxlength="2000"></textarea></label>
+          <div id="ownership-fields" hidden><label>Institutional record reference<input name="record_reference" maxlength="100"></label><label class="check"><input name="ownership_confirmed" type="checkbox">I checked institutional records and independently confirmed this student's ownership. An admission number alone is insufficient.</label></div>
+          <label>Private staff evidence note<textarea name="internal_note" maxlength="2000" placeholder="Describe the institutional checks performed. Do not copy identity documents here."></textarea></label><button>Save decision</button>
+        </form>
+      </div></div>
+      <section id="manager-tools" hidden class="grid">
+        <div class="panel"><h2>Ordering and matching policy</h2><form id="policy-form"><label class="check"><input name="accepting_requests" type="checkbox">Accept new submissions</label><label>Instructions for students<textarea name="student_instructions" maxlength="4000"></textarea></label><fieldset id="policy-required"><legend>Additional required matching information</legend></fieldset><button>Save policy</button></form><h3>Invite institution staff</h3><form id="staff-invite-form"><label>Email<input name="email" type="email" required></label><button>Send invitation</button></form></div>
+        <div class="panel"><h2>Document services</h2><div id="service-list"></div><button id="new-service" class="secondary">Add a service</button><form id="service-form"><h3 id="service-form-title">New service</h3><label>Service code<input name="code" required maxlength="50" pattern="[A-Za-z0-9_-]+"></label><label>Name<input name="name" required maxlength="255"></label><label>Document type<select name="document_type"><option value="official_transcript">Official transcript</option><option value="student_copy">Student copy</option><option value="degree_certificate">Degree certificate</option><option value="enrollment_letter">Enrollment letter</option><option value="completion_letter">Completion letter</option></select></label><label>Description<textarea name="description" maxlength="2000"></textarea></label><label>Fee in KES<input name="fee" type="number" min="0" max="10000000" step="0.01" required></label><div class="row"><label>Minimum business days<input name="processing_days_min" type="number" min="0" max="365" required></label><label>Maximum business days<input name="processing_days_max" type="number" min="0" max="365" required></label></div><fieldset><legend>Delivery options</legend><label class="check"><input name="delivery_methods" value="secure_electronic" type="checkbox" checked>Secure electronic delivery</label><label class="check"><input name="delivery_methods" value="collection" type="checkbox">Collection</label><label class="check"><input name="delivery_methods" value="post" type="checkbox">Post</label></fieldset><fieldset id="service-required"><legend>Additional required matching information</legend></fieldset><label class="check"><input name="is_active" type="checkbox" checked>Service is available</label><button>Save service</button></form></div>
+      </section>
+    </section>
+    <section id="admin-view" class="panel" hidden><h2>Institution approval</h2><p>Approve an institution only after checking its authority to participate. Demo institutions are for development only.</p><label>Institution<select id="admin-institution"></select></label><p id="approval-status"></p><form id="approval-form"><label class="check"><input name="approved" type="checkbox">Approved to accept submissions</label><label>Reason<textarea name="reason" required maxlength="1000"></textarea></label><button>Save approval</button></form><h3>Appoint institution staff</h3><form id="admin-invite-form"><label>Email<input name="email" type="email" required></label><label>Role<select name="role"><option value="manager">Institution manager</option><option value="staff">Institution staff</option></select></label><button>Send invitation</button></form></section>
+  </section>
+</main>
+<footer>TranscriptsKE · Institutions confirm record ownership. No transcript is issued or paid for in this workspace yet.</footer>
+</body>
+</html>
