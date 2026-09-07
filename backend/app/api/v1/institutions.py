@@ -6,7 +6,6 @@ from app.db.session import get_db
 from app.models.institution import Institution
 from app.schemas.institution import InstitutionRead
 
-
 router = APIRouter(prefix="/institutions", tags=["institutions"])
 
 

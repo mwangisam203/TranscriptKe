@@ -45,3 +45,7 @@ build/
 # Uploaded files / local media
 uploads/
 media/
+
+# Local development emails contain one-time secrets
+backend/.mailbox/
+*.sqlite3
