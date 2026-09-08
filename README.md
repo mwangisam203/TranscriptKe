@@ -1,9 +1,9 @@
 # TranscriptsKE
 
 TranscriptsKE is a Kenyan academic transcript request and verification platform.
-The current release implements **Milestone 1: accounts and institutional access**.
-Transcript ordering, academic record matching, registrar fulfillment, document delivery,
-and payments are planned; they are not implemented yet. Payments will include M-Pesa
+The current release implements **Milestones 1 and 2: accounts, institution services,
+and academic record matching**. Transcript ordering, registrar fulfillment, document
+delivery, and payments are planned; they are not implemented yet. Payments will include M-Pesa
 and Stripe or another suitable card gateway in Milestone 5.
 
 ## Implemented
@@ -14,13 +14,18 @@ and Stripe or another suitable card gateway in Milestone 5.
 - Expiring, single-use action codes stored as hashes; password changes/reset invalidate old sessions.
 - Logout invalidates access tokens on all devices. Access tokens expire after 60 minutes by default.
 - Database-backed rate limits shared across application workers.
-- Public active-institution directory.
+- Public directory of active, approved institutions.
+- Configurable institution services, KES fees, delivery options, processing times and matching requirements.
+- Student academic record links, manual staff decisions, private evidence and versioned review history.
+- A browser workspace for students, staff, managers and institution approvals.
 - Institution memberships, authorized invitations, manager/staff permissions, and revocation.
 - Audit records for email verification, password changes, administrator bootstrap, and staff access changes.
 - Repeatable fictional development institutions and an explicit local administrator bootstrap command.
 - Local file email delivery for development and SMTP with STARTTLS for deployment.
 
-There is no frontend yet. Use the interactive API documentation at `/docs`.
+Open the basic browser workspace at `/workspace`, or use the interactive API documentation
+at `/docs`. The workspace is served by FastAPI and needs no separate frontend build.
+See the [Milestone 2 guide](docs/milestone-2.md) for the demo walkthrough and new endpoints.
 
 ## Requirements and setup
 
@@ -52,7 +57,7 @@ For a **new, empty database**:
 
 ```bash
 uv run alembic upgrade head
-uv run python -m app.cli seed-institutions
+uv run python -m app.cli seed-academic-demo
 uv run uvicorn app.main:app --reload
 ```
 
@@ -90,6 +95,11 @@ in. Existing staff roles do not create memberships or grant institution access;
 authorized invitations are required. Previously issued JWTs are no longer accepted.
 Review legacy invalid email addresses with their owners before migration if any exist.
 Downgrading does not restore the old verification flags.
+
+For an existing Milestone 1 database already at `0002`, run `uv run alembic upgrade head`
+to apply `0003`. It preserves verified accounts, sessions and memberships. Existing
+institutions start **unapproved** and must be approved by a platform administrator
+before becoming publicly available or accepting matching submissions.
 
 ## Try registration and verification
 
@@ -252,12 +262,15 @@ TEST_DATABASE_URL='postgresql://test_user:test_password@localhost:5432/transcrip
 
 The test database name must start with `transcriptske_test`. The database role must
 be allowed to create schemas. Each test creates a uniquely named schema and drops
-that schema afterward. The two concurrency tests run only against PostgreSQL.
+that schema afterward. Concurrency tests run only against PostgreSQL. Real-browser
+checks are opt-in; installation and commands are in the [Milestone 2 guide](docs/milestone-2.md#validation).
 
 Coverage includes fresh migration/rollback and schema consistency, legacy-account
 upgrades, registration validation, code expiry/replay/purpose checks, login failures,
 session invalidation, rate limits, invitation authorization, tenant isolation,
 revocation, seed idempotency, administrator bootstrap, and simultaneous code redemption.
+Milestone 2 adds service/policy validation, approval gates, ownership checks,
+private evidence isolation, stale-decision protection, and simultaneous review decisions.
 
 For model changes, generate and review a migration before applying it:
 
@@ -272,7 +285,8 @@ and [FastAPI testing documentation](https://fastapi.tiangolo.com/tutorial/testin
 
 ## What follows
 
-Milestone 2 adds institution services, ordering policies, and academic-record matching.
-Later milestones add ordering/consent, registrar processing, M-Pesa **and card payments**,
-trusted issuance/delivery, and pilot operations. Frontend, MFA, SIS integrations,
-third-party ordering, and credential verification are outside this foundation change.
+Milestone 3 adds transcript ordering, consent and student tracking on top of the
+confirmed record links and institution catalog. Later milestones add registrar
+fulfillment, M-Pesa **and card payments**, trusted issuance/delivery, and pilot operations.
+The basic workspace can evolve into the planned Next.js frontend. MFA, SIS integrations,
+third-party ordering, and credential verification remain future work.
