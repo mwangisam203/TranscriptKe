@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum,
@@ -86,6 +87,7 @@ class AccessEvent(Base):
     )
     action: Mapped[str] = mapped_column(String(50))
     subject_id: Mapped[int | None] = mapped_column(Integer)
+    details: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
