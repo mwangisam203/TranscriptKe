@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
+from app.models.academic import InstitutionService, OrderingPolicy
 from app.models.access import AccessEvent
 from app.models.institution import Institution
 from app.models.user import User, UserRole
@@ -26,10 +27,60 @@ def seed_institutions(db: Session) -> int:
     created = 0
     for code, name in DEVELOPMENT_INSTITUTIONS:
         if db.scalar(select(Institution.id).where(Institution.code == code)) is None:
-            db.add(Institution(code=code, name=name, country="Kenya", is_active=True))
+            db.add(
+                Institution(
+                    code=code,
+                    name=name,
+                    country="Kenya",
+                    is_active=True,
+                    is_approved=True,
+                )
+            )
             created += 1
     db.commit()
     return created
+
+
+def seed_academic_demo(db: Session) -> None:
+    """Explicit fictional catalog; never overwrites a manager's configuration."""
+    seed_institutions(db)
+    for code, _ in DEVELOPMENT_INSTITUTIONS:
+        institution = db.scalar(select(Institution).where(Institution.code == code))
+        if db.get(OrderingPolicy, institution.id) is None:
+            db.add(
+                OrderingPolicy(
+                    institution_id=institution.id,
+                    accepting_requests=True,
+                    required_fields=["program", "attendance_start_year"],
+                    student_instructions="Demo only: provide your admission number, name on record, program and first attendance year. No real academic records are connected.",
+                )
+            )
+        if (
+            db.scalar(
+                select(InstitutionService.id).where(
+                    InstitutionService.institution_id == institution.id,
+                    InstitutionService.code == "DEMO-TRANSCRIPT",
+                )
+            )
+            is None
+        ):
+            db.add(
+                InstitutionService(
+                    institution_id=institution.id,
+                    code="DEMO-TRANSCRIPT",
+                    name="Official transcript (demo)",
+                    document_type="official_transcript",
+                    description="Fictional service and sample fee for development. No payment is collected.",
+                    fee_minor=150000,
+                    currency="KES",
+                    processing_days_min=3,
+                    processing_days_max=7,
+                    delivery_methods=["secure_electronic"],
+                    required_fields=[],
+                    is_active=True,
+                )
+            )
+    db.commit()
 
 
 def bootstrap_admin(db: Session, email: str) -> None:
@@ -56,6 +107,10 @@ def main() -> None:
     commands.add_parser(
         "seed-institutions", help="Insert fictional development institutions"
     )
+    commands.add_parser(
+        "seed-academic-demo",
+        help="Insert fictional institutions, catalog and matching policies",
+    )
     admin = commands.add_parser(
         "bootstrap-admin", help="Grant a verified account platform-admin access"
     )
@@ -65,6 +120,9 @@ def main() -> None:
         try:
             if args.command == "seed-institutions":
                 print(f"Created {seed_institutions(db)} development institutions.")
+            elif args.command == "seed-academic-demo":
+                seed_academic_demo(db)
+                print("Demo institutions, services and matching policies are ready.")
             else:
                 bootstrap_admin(db, args.email)
                 print("Administrator access granted. Sign in again.")
