@@ -22,6 +22,7 @@ from app.main import app
 from app.models.institution import Institution
 from app.models.user import User, UserRole
 from app.services.mail import get_mailer
+from tests.fixtures_academic import catalog  # noqa: F401 -- register shared fixture
 
 BACKEND = Path(__file__).resolve().parents[1]
 PASSWORD = "correct horse 123"
@@ -150,8 +151,8 @@ def auth_headers():
 @pytest.fixture
 def institutions(db):
     items = [
-        Institution(name="Test University A", code="TEST-A"),
-        Institution(name="Test College B", code="TEST-B"),
+        Institution(name="Test University A", code="TEST-A", is_approved=True),
+        Institution(name="Test College B", code="TEST-B", is_approved=True),
     ]
     db.add_all(items)
     db.commit()
