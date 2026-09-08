@@ -11,4 +11,5 @@ class InstitutionRead(BaseModel):
     code: str
     country: str
     is_active: bool
+    is_approved: bool
     created_at: datetime
