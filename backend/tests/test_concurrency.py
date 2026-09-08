@@ -80,3 +80,58 @@ def test_parallel_password_resets_cannot_both_succeed(
     with Session(engine) as db:
         assert db.get(User, user.id).token_version == 1
         assert all(record.consumed_at for record in db.scalars(select(ActionToken)))
+
+
+def test_parallel_match_decisions_require_the_same_current_version(
+    engine, client, catalog, user_factory, auth_headers, monkeypatch
+):
+    if engine.dialect.name != "postgresql":
+        pytest.skip("Decision concurrency is validated against PostgreSQL")
+    from app.api.v1.academic_records import decide_match
+    from app.models.academic import AcademicRecordLink, RecordMatchEvent
+    from app.schemas.academic import MatchDecision
+    from app.services.academic import lock_institution
+    from tests.test_academic_records import decision, submission
+
+    student = user_factory()
+    response = client.post(
+        "/api/v1/me/academic-record-links",
+        headers=auth_headers(student),
+        json=submission(catalog),
+    )
+    assert response.status_code == 201
+    link_id = response.json()["id"]
+    staff_id = catalog["staff"].id
+    institution_id = catalog["institution"].id
+    barrier = Barrier(2)
+
+    def synchronized_lock(db, identifier):
+        barrier.wait(timeout=10)
+        return lock_institution(db, identifier)
+
+    monkeypatch.setattr(
+        "app.api.v1.academic_records.lock_institution", synchronized_lock
+    )
+
+    def decide(outcome):
+        with Session(engine) as db:
+            user = db.get(User, staff_id)
+            try:
+                decide_match(
+                    institution_id,
+                    link_id,
+                    MatchDecision(**decision(outcome=outcome)),
+                    db,
+                    user,
+                )
+                return 200
+            except HTTPException as exc:
+                db.rollback()
+                return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        outcomes = list(workers.map(decide, ["matched", "rejected"]))
+    assert sorted(outcomes) == [200, 409]
+    with Session(engine) as db:
+        assert db.get(AcademicRecordLink, link_id).version == 2
+        assert len(db.scalars(select(RecordMatchEvent)).all()) == 2
