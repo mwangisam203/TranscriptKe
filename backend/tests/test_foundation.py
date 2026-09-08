@@ -19,7 +19,7 @@ def test_fresh_database_matches_models_and_can_roundtrip(engine):
     with engine.begin() as connection:
         config = migration_config(connection)
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0003"
         )
         command.check(config)
         command.downgrade(config, "base")
@@ -131,3 +131,53 @@ def test_unsafe_production_settings_rejected(overrides):
     }
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **{**values, **overrides})
+
+
+def test_milestone_two_upgrade_preserves_verified_accounts_and_access(engine):
+    with engine.begin() as connection:
+        config = migration_config(connection)
+        command.downgrade(config, "0002")
+        now = datetime.now(timezone.utc).isoformat()
+        connection.execute(
+            text(
+                "INSERT INTO institutions (id, name, code, country, is_active, created_at) VALUES (700, 'Existing University', 'EXISTING', 'Kenya', true, :now)"
+            ),
+            {"now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO users (id, email, is_email_verified, password_hash, full_name, role, token_version, created_at) VALUES (700, 'verified@example.com', true, 'hash', 'Verified User', 'institution_staff', 3, :now)"
+            ),
+            {"now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO institution_memberships (institution_id, user_id, role, is_active, created_at) VALUES (700, 700, 'manager', true, :now)"
+            ),
+            {"now": now},
+        )
+        command.upgrade(config, "head")
+        user = (
+            connection.execute(text("SELECT * FROM users WHERE id = 700"))
+            .mappings()
+            .one()
+        )
+        assert user["is_email_verified"] and user["token_version"] == 3
+        assert not connection.scalar(
+            text("SELECT is_approved FROM institutions WHERE id = 700")
+        )
+        assert (
+            connection.scalar(text("SELECT count(*) FROM institution_memberships")) == 1
+        )
+        assert connection.scalar(text("SELECT count(*) FROM ordering_policies")) == 0
+        command.check(config)
+
+
+def test_workspace_served_with_local_assets_and_security_headers(client):
+    response = client.get("/workspace")
+    assert response.status_code == 200
+    assert "Content-Security-Policy" in response.headers
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "Academic records" in response.text
+    assert client.get("/workspace/assets/workspace.js").status_code == 200
+    assert client.get("/workspace/assets/workspace.css").status_code == 200
