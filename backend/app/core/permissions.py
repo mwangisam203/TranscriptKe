@@ -38,3 +38,29 @@ def require_invitation_permission(
         raise HTTPException(
             403, "Only platform administrators can appoint institution managers"
         )
+
+
+def require_academic_staff(
+    db: Session, user: User, institution_id: int, *, manage: bool = False
+) -> InstitutionMembership:
+    """Academic work requires actual institution membership, including for platform admins."""
+    institution = db.get(Institution, institution_id)
+    if institution is None or not institution.is_active:
+        raise HTTPException(404, "Institution not found")
+    membership = db.scalar(
+        select(InstitutionMembership).where(
+            InstitutionMembership.institution_id == institution_id,
+            InstitutionMembership.user_id == user.id,
+            InstitutionMembership.is_active.is_(True),
+        )
+    )
+    if (
+        not user.is_email_verified
+        or membership is None
+        or (manage and membership.role != MembershipRole.MANAGER)
+    ):
+        raise HTTPException(
+            403,
+            "Active institutional membership with the required permission is needed",
+        )
+    return membership
