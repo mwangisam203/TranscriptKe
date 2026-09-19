@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str | None = None
     SMTP_PASSWORD: str | None = None
     SMTP_STARTTLS: bool = True
+    ATTACHMENT_SCANNER: Literal["disabled", "clamav"] = "disabled"
+    CLAMAV_COMMAND: str = "clamscan"
 
     @model_validator(mode="after")
     def validate_deployment(self):
