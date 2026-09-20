@@ -8,8 +8,10 @@ from app.api.v1.academic_records import router as academic_records_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.catalog import router as catalog_router
 from app.api.v1.institutions import router as institutions_router
+from app.api.v1.orders import router as orders_router
 from app.api.v1.staff import router as staff_router
 from app.core.config import settings
+from app.services.order_attachments import AttachmentBodyLimit
 
 app = FastAPI(
     title=f"{settings.APP_NAME} API",
@@ -22,6 +24,8 @@ app.include_router(institutions_router, prefix="/api/v1")
 app.include_router(staff_router, prefix="/api/v1")
 app.include_router(catalog_router, prefix="/api/v1")
 app.include_router(academic_records_router, prefix="/api/v1")
+app.include_router(orders_router, prefix="/api/v1")
+app.add_middleware(AttachmentBodyLimit)
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 app.mount(
@@ -35,7 +39,13 @@ app.mount(
 async def private_api_responses(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith(
-        ("/api/v1/me/", "/api/v1/staff/", "/api/v1/auth/", "/api/v1/admin/")
+        (
+            "/api/v1/me/",
+            "/api/v1/staff/",
+            "/api/v1/auth/",
+            "/api/v1/admin/",
+            "/api/v1/orders",
+        )
     ):
         response.headers["Cache-Control"] = "no-store"
     return response
