@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.main import app
 from app.models.academic import AcademicRecordLink
 from tests.conftest import PASSWORD
+from tests.test_orders import workflow  # noqa: F401 -- shared ordering setup
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
@@ -130,6 +131,94 @@ def test_manager_changes_service_and_policy_on_mobile(browser, live_url, catalog
     page.locator("#notice").filter(has_text="Institution policy saved.").wait_for()
     db.refresh(catalog["policy"])
     assert not catalog["policy"].accepting_requests
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    assert not errors
+    page.close()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_order_submission_questions_and_cancellation(
+    browser,
+    live_url,
+    workflow,  # noqa: F811 -- imported pytest fixture
+    catalog,
+    width,
+):
+    w = workflow
+    page = browser.new_page(viewport={"width": width, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    login(page, live_url, w["user"].email)
+    page.locator("[data-view=orders-view]").click()
+    page.get_by_role("button", name="Open order", exact=True).click()
+    page.locator("#order-editor").wait_for(state="visible")
+    page.locator("#order-editor [name=purpose]").fill("Admission to graduate school")
+    page.get_by_role("button", name="Save draft", exact=True).click()
+    page.locator("#notice").filter(has_text="Draft saved.").wait_for()
+    page.locator("#order-file").set_input_files(
+        {
+            "name": "instructions.txt",
+            "mimeType": "text/plain",
+            "buffer": b"Please include all semesters.",
+        }
+    )
+    page.locator("#order-attachment-form button").click()
+    page.locator("#notice").filter(has_text="Attachment added.").wait_for()
+    page.locator("#quote-order").click()
+    page.locator("#order-consent-checkbox").wait_for()
+    assert "3,001.00" in page.locator("#order-quote").inner_text()
+    assert "instructions.txt" in page.locator("#order-quote").inner_text()
+    page.locator("#order-consent-checkbox").check()
+    page.locator("#order-final-submit").click()
+    page.locator("#notice").filter(has_text="Order submitted.").wait_for()
+    assert "submitted" in page.locator("#order-state").inner_text()
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    page.locator("#logout").click()
+    page.locator("#authentication").wait_for(state="visible")
+    login(page, live_url, catalog["staff"].email)
+    page.locator("#staff-tab").click()
+    page.get_by_role("button", name="Review order", exact=True).click()
+    page.locator("#staff-order-message-form [name=body]").fill(
+        "Confirm the graduation session."
+    )
+    page.locator("#staff-order-message-form [name=requires_response]").check()
+    page.locator("#staff-order-message-form button").click()
+    page.locator("#notice").filter(has_text="Student message sent.").wait_for()
+    page.locator("#logout").click()
+    page.locator("#authentication").wait_for(state="visible")
+    login(page, live_url, w["user"].email)
+    page.locator("[data-view=orders-view]").click()
+    assert "1 question(s)" in page.locator("#order-list").inner_text()
+    page.get_by_role("button", name="Open order", exact=True).click()
+    page.locator("#order-message-form").wait_for(state="visible")
+    page.locator("#order-message-form [name=in_reply_to_id]").select_option(index=1)
+    page.locator("#order-message-form [name=body]").fill("December 2026.")
+    page.locator("#order-message-form button").click()
+    page.locator("#notice").filter(has_text="Message sent.").wait_for()
+    assert "Response received." in page.locator("#order-conversation").inner_text()
+    page.locator("#order-cancel-form [name=reason]").fill("No longer applying.")
+    page.locator("#order-cancel-form button").click()
+    page.locator("#notice").filter(has_text="Cancellation recorded.").wait_for()
+    page.locator("#logout").click()
+    page.locator("#authentication").wait_for(state="visible")
+    login(page, live_url, catalog["staff"].email)
+    page.locator("#staff-tab").click()
+    page.get_by_role("button", name="Review order", exact=True).click()
+    page.locator("#staff-order-cancel-form [name=decision]").select_option("approved")
+    page.locator("#staff-order-cancel-form [name=reason]").fill(
+        "Cancelled before processing."
+    )
+    page.locator("#staff-order-cancel-form button").click()
+    page.locator("#notice").filter(has_text="Cancellation decision saved.").wait_for()
+    assert "cancelled" in page.locator("#staff-order-title").inner_text()
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    if width == 1280:
+        page.screenshot(path="/tmp/transcriptske-milestone3.png", full_page=True)
     assert not errors
     page.close()
