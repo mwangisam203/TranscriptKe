@@ -20,6 +20,7 @@ function bindForm(id, fn) {
   });
 }
 function signOutView() {
+  window.ordersWorkspace?.reset();
   sessionGeneration++; accessToken = ""; currentUser = null; staffContext = null;
   memberships = []; studentServices = []; publicInstitutions = []; adminInstitutions = [];
   editingService = revisingLink = reviewingLink = null;
@@ -28,11 +29,12 @@ function signOutView() {
   for (const id of ["my-links", "student-history", "match-list", "review-history", "review-details", "service-list"]) $(id).replaceChildren();
   $("workspace").hidden = true; $("authentication").hidden = false; $("logout").hidden = true;
 }
-async function api(path, method = "GET", body) {
+async function api(path, method = "GET", body, extraHeaders = {}) {
   const generation = sessionGeneration;
-  const headers = {"Content-Type": "application/json"};
+  const multipart = body instanceof FormData;
+  const headers = {...(multipart ? {} : {"Content-Type": "application/json"}), ...extraHeaders};
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-  const response = await fetch(`/api/v1${path}`, {method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store"});
+  const response = await fetch(`/api/v1${path}`, {method, headers, body: body === undefined ? undefined : multipart ? body : JSON.stringify(body), cache: "no-store"});
   if (generation !== sessionGeneration) throw new Error("The session changed. Please try again.");
   if (response.status === 401 && accessToken) signOutView();
   const data = response.status === 204 ? null : await response.json();
@@ -67,7 +69,7 @@ function fillForm(form, data) {
   }
 }
 function showView(id) {
-  for (const view of ["student-view", "staff-view", "admin-view"]) $(view).hidden = view !== id;
+  for (const view of ["student-view", "orders-view", "staff-view", "admin-view"]) $(view).hidden = view !== id;
   document.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === id)));
 }
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
@@ -93,6 +95,7 @@ async function loadSession() {
   $("authentication").hidden = true; $("workspace").hidden = false; $("logout").hidden = false;
   clearRevision(); showView("student-view"); await loadLinks();
   if (memberships.length) await loadStaff();
+  await window.ordersWorkspace?.load();
 }
 bindForm("login-form", async (form) => { const data = await api("/auth/login", "POST", formObject(form)); accessToken = data.access_token; form.reset(); await loadSession(); notice("Signed in."); });
 bindForm("register-form", async (form) => { await api("/auth/register", "POST", formObject(form)); form.reset(); notice("Account created. Check your email for a verification code before signing in."); });
@@ -204,6 +207,7 @@ async function loadStaff() {
   $("staff-institution-status").textContent = `${institution.name} · ${institution.is_approved ? "Approved institution" : "Awaiting platform approval"}`;
   $("manager-tools").hidden = !manager;
   fillForm($("policy-form"), policy); renderServices(); resetServiceForm(); await loadMatches();
+  await window.ordersWorkspace?.loadStaff(staffContext);
 }
 $("staff-institution").addEventListener("change", () => run(loadStaff));
 function requireContext() { if (!staffContext) throw new Error("Select an institution and wait for it to load."); return staffContext; }
