@@ -2,6 +2,7 @@
 // The workspace owns authentication; this module never persists access tokens.
 let O_current = null, O_services = [], O_quote = null, O_consentText = null;
 let O_dirty = false, O_offset = 0, O_staffOffset = 0, O_staff = null, O_staffContext = null;
+let O_queueGeneration = 0, O_staffGeneration = 0;
 let O_createKey = null, O_submitKey = null, O_reorderKey = null, O_generation = 0;
 let O_attachmentPolicy = {extensions: [".txt"], max_files: 5};
 const O_money = (minor) => new Intl.NumberFormat("en-KE", {style: "currency", currency: "KES"}).format(minor / 100);
@@ -132,6 +133,8 @@ async function O_open(id) {
   if (draft) { order.recipients.forEach(O_addRecipient); order.items.forEach(O_addItem); }
   O_summary($("submitted-order-summary"), order.submitted_snapshot);
   O_renderAttachments($("order-attachments"), order, null);
+  await F_student(order);
+  if (O_current !== order) return;
   O_renderTimeline($("order-timeline"), timeline, order);
   O_renderMessages($("order-conversation"), messages);
   options($("order-message-form").elements.in_reply_to_id, messages.filter((m) => m.author_role === "staff" && m.requires_response && !m.answered_at), (m) => m.body, "General message");
@@ -220,10 +223,16 @@ $("reorder-button").addEventListener("click", () => run(async () => {
 }));
 async function O_loadStaff(context, append = false) {
   if (!context) return;
+  const generation = ++O_queueGeneration;
+  if (!append) O_staffGeneration++;
   if (!append) { O_staffOffset = 0; O_staff = null; $("staff-order-detail").hidden = true; $("staff-order-list").replaceChildren(); }
   O_staffContext = context;
-  const orders = await api(`/staff/institutions/${context.id}/orders?offset=${O_staffOffset}&limit=30`);
-  if (O_staffContext !== context || staffContext !== context) return;
+  const query = new URLSearchParams({offset: O_staffOffset, limit: 30});
+  if ($("registrar-state").value) query.set("state", $("registrar-state").value);
+  if ($("registrar-mine").checked) query.set("assigned_to", currentUser.id);
+  if ($("registrar-holds").checked) query.set("on_hold", "true");
+  const orders = await api(`/staff/institutions/${context.id}/registrar-queue?${query}`);
+  if (generation !== O_queueGeneration || O_staffContext !== context || staffContext !== context) return;
   for (const order of orders) {
     const row = node("div", undefined, "card"); row.append(node("strong", order.reference), node("p", order.status.replaceAll("_", " ")), action("Review order", () => O_openStaff(context, order.id))); $("staff-order-list").append(row);
   }
@@ -231,13 +240,15 @@ async function O_loadStaff(context, append = false) {
   O_staffOffset += orders.length; $("more-staff-orders").hidden = orders.length < 30;
 }
 async function O_openStaff(context, id) {
+  const generation = ++O_staffGeneration;
   const base = `/staff/institutions/${context.id}/orders/${id}`;
   const [order, timeline, messages] = await Promise.all([api(base), api(`${base}/timeline`), api(`${base}/messages`)]);
-  if (staffContext !== context || O_staffContext !== context) return;
+  if (generation !== O_staffGeneration || staffContext !== context || O_staffContext !== context) return;
   O_staff = order; $("staff-order-detail").hidden = false; $("staff-order-title").textContent = `${order.reference} · ${order.status.replaceAll("_", " ")}`;
   O_summary($("staff-order-summary"), order.submitted_snapshot); O_renderAttachments($("staff-order-attachments"), order, context.id);
   O_renderTimeline($("staff-order-timeline"), timeline, order); O_renderMessages($("staff-order-conversation"), messages);
   $("staff-order-cancel-form").hidden = order.status !== "cancellation_requested";
+  await F_staff(context, order);
 }
 $("refresh-staff-orders").addEventListener("click", () => run(() => O_loadStaff(requireContext())));
 $("more-staff-orders").addEventListener("click", () => run(() => O_loadStaff(requireContext(), true)));
@@ -252,6 +263,9 @@ bindForm("staff-order-cancel-form", async (form) => {
   form.reset(); await O_loadStaff(context); await O_openStaff(context, order.id); notice("Cancellation decision saved.");
 });
 window.ordersWorkspace = {load: O_load, loadStaff: O_loadStaff, reset() {
+  $("student-fulfillment").replaceChildren(); $("registrar-workspace").replaceChildren();
+  O_queueGeneration++; O_staffGeneration++;
+  $("registrar-state").value = ""; $("registrar-mine").checked = false; $("registrar-holds").checked = false;
   O_generation++; O_current = O_quote = O_staff = O_staffContext = null; O_createKey = O_submitKey = O_reorderKey = null;
   O_services = []; $("order-detail").hidden = true; $("staff-order-detail").hidden = true;
   for (const id of ["order-list", "order-recipients", "order-items", "order-attachments", "order-quote", "submitted-order-summary", "order-timeline", "order-conversation", "staff-order-list", "staff-order-summary", "staff-order-attachments", "staff-order-timeline", "staff-order-conversation"]) $(id).replaceChildren();
