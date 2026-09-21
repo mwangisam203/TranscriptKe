@@ -397,6 +397,6 @@ def submit_order(db, order, user, payload, key):
 def can_cancel(db, order):
     # Later fulfillment/payment milestones must extend this gate deliberately.
     return order.payment_status == "not_started" and all(
-        item.fulfillment_status in ("draft", "awaiting_review")
+        item.fulfillment_status in ("draft", "awaiting_review", "rejected")
         for item in rows(db, OrderItem, order.id)
     )
