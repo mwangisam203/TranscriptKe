@@ -11,6 +11,11 @@ from app.models.access import (
     InstitutionMembership,
     MembershipRole,
 )
+from app.models.fulfillment import (
+    OrderHold,
+    RegistrarCase,
+    RegistrarEvent,
+)
 from app.models.institution import Institution
 from app.models.orders import (
     Order,
@@ -26,6 +31,9 @@ from app.models.orders import (
 from app.models.user import User, UserRole
 
 __all__ = [
+    "OrderHold",
+    "RegistrarCase",
+    "RegistrarEvent",
     "Order",
     "OrderRecipient",
     "OrderItem",
