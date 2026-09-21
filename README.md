@@ -1,9 +1,9 @@
 # TranscriptsKE
 
 TranscriptsKE is a Kenyan academic transcript request and verification platform.
-The current release implements **Milestones 1–3: accounts, institution services,
-academic record matching, and transcript ordering with consent and tracking**.
-Registrar fulfillment, document delivery, and payments are planned. Payments will include M-Pesa
+The current release implements **Milestones 1–4: accounts, institution services,
+academic record matching, transcript ordering, and registrar review with holds and
+fulfillment preparation**. Official issuance, document delivery, and payments are planned. Payments will include M-Pesa
 and Stripe or another suitable card gateway in Milestone 5.
 
 ## Implemented
@@ -19,6 +19,7 @@ and Stripe or another suitable card gateway in Milestone 5.
 - Student academic record links, manual staff decisions, private evidence and versioned review history.
 - Draft document orders, multiple recipients, exact KES quotes, explicit consent and immutable submissions.
 - Private supporting attachments, order timelines, student/staff messages and cancellation review.
+- Registrar assignment, document review, holds, preparation states and release-condition checks.
 - A browser workspace for students, staff, managers and institution approvals.
 - Institution memberships, authorized invitations, manager/staff permissions, and revocation.
 - Audit records for email verification, password changes, administrator bootstrap, and staff access changes.
@@ -99,13 +100,17 @@ Review legacy invalid email addresses with their owners before migration if any 
 Downgrading does not restore the old verification flags.
 
 For an existing Milestone 1 database already at `0002`, run `uv run alembic upgrade head`
-to apply `0003` and `0004`. It preserves verified accounts, sessions and memberships. Existing
+to apply `0003` through `0005`. It preserves verified accounts, sessions and memberships. Existing
 institutions start **unapproved** and must be approved by a platform administrator
 before becoming publicly available or accepting matching submissions.
 
 For an existing Milestone 2 database at `0003`, `uv run alembic upgrade head` adds
-revision `0004` without changing existing accounts, catalog data or record matches.
+revisions `0004` and `0005` without changing existing accounts, catalog data or record matches.
 See the [Milestone 3 guide](docs/milestone-3.md) for the workflow, endpoints and attachment setup.
+
+For an existing Milestone 3 database at `0004`, `uv run alembic upgrade head` applies
+`0005`. See the [Milestone 4 guide](docs/milestone-4.md) for registrar workflows,
+permissions and release boundaries.
 
 ## Try registration and verification
 
@@ -291,7 +296,7 @@ and [FastAPI testing documentation](https://fastapi.tiangolo.com/tutorial/testin
 
 ## What follows
 
-Milestone 4 adds registrar fulfillment and release checks. Milestone 5 adds M-Pesa
+Milestone 4 provides registrar review, holds and preparation readiness. Milestone 5 adds M-Pesa
 and **Stripe or another card gateway**, followed by trusted issuance/delivery and pilot operations.
 Milestone 3 records quotes and authorization but never charges a card or marks an order paid.
 The basic workspace can evolve into the planned Next.js frontend. MFA, SIS integrations,
