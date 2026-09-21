@@ -145,7 +145,8 @@ Set `TEST_DATABASE_URL` to a disposable PostgreSQL database named
 `transcriptske_test*` for locking/concurrency checks. Tests migrate isolated schemas;
 they do not use the configured application database or mail provider.
 
-Next: registrar review, holds and fulfillment states (Milestone 4), then M-Pesa and
+Registrar review, holds and fulfillment states are now covered by the
+[Milestone 4 guide](milestone-4.md). Next come M-Pesa and
 Stripe or another card gateway with verified payment webhooks, reconciliation and
 refunds (Milestone 5). Orders currently remain `payment_status=not_started`; submission
 is a request, not proof of payment, issuance or delivery. Official PDFs, secure
