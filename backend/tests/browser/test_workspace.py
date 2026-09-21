@@ -222,3 +222,84 @@ def test_order_submission_questions_and_cancellation(
         page.screenshot(path="/tmp/transcriptske-milestone3.png", full_page=True)
     assert not errors
     page.close()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_registrar_review_holds_and_student_progress(
+    browser,
+    live_url,
+    workflow,  # noqa: F811 -- imported pytest fixture
+    catalog,
+    client,
+    width,
+):
+    from tests.test_orders import submit
+
+    submit(client, workflow)
+    page = browser.new_page(viewport={"width": width, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    login(page, live_url, catalog["staff"].email)
+    page.locator("#staff-tab").click()
+    page.get_by_role("button", name="Review order", exact=True).click()
+    page.get_by_role("button", name="Assign to me", exact=True).click()
+    page.locator("#notice").filter(has_text="Registrar update saved.").wait_for()
+    decision_form = page.locator("#registrar-workspace form").filter(
+        has=page.get_by_role("heading", name="Document decision", exact=True)
+    )
+    decision_form.locator("[name=student_message]").fill(
+        "Your request has been approved."
+    )
+    decision_form.locator("[name=internal_note]").fill(
+        "PRIVATE registrar archive evidence."
+    )
+    decision_form.get_by_role("button").click()
+    page.locator("#registrar-workspace").get_by_text(
+        "Official transcript: processing", exact=True
+    ).wait_for()
+    hold_form = page.locator("#registrar-workspace form").filter(
+        has=page.get_by_role("heading", name="Place an order hold", exact=True)
+    )
+    hold_form.locator("[name=student_message]").fill("Please confirm clearance.")
+    hold_form.locator("[name=internal_note]").fill("PRIVATE financial ledger review.")
+    hold_form.get_by_role("button").click()
+    page.get_by_text("Active hold: Please confirm clearance.", exact=True).wait_for()
+    resolve_form = page.locator("#registrar-workspace form").filter(
+        has=page.get_by_role("heading", name="Resolve hold", exact=True)
+    )
+    resolve_form.locator("[name=student_message]").fill("Clearance confirmed.")
+    resolve_form.locator("[name=internal_note]").fill(
+        "PRIVATE clearance source checked."
+    )
+    resolve_form.get_by_role("button").click()
+    page.get_by_text("Resolved hold: Please confirm clearance.", exact=True).wait_for()
+    decision_form.locator("[name=decision]").select_option("ready")
+    decision_form.locator("[name=student_message]").fill(
+        "Preparation is complete; release checks remain."
+    )
+    decision_form.locator("[name=internal_note]").fill(
+        "PRIVATE registrar preparation evidence."
+    )
+    decision_form.get_by_role("button").click()
+    page.locator("#registrar-workspace").get_by_text(
+        "Official transcript: ready", exact=True
+    ).wait_for()
+    assert (
+        "Verified payment is required"
+        in page.locator("#registrar-workspace").inner_text()
+    )
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    page.locator("#logout").click()
+    page.locator("#authentication").wait_for(state="visible")
+    login(page, live_url, workflow["user"].email)
+    page.locator("[data-view=orders-view]").click()
+    page.get_by_role("button", name="Open order", exact=True).click()
+    page.locator("#student-fulfillment").get_by_text(
+        "Official transcript: ready", exact=True
+    ).wait_for()
+    assert "Clearance confirmed." in page.locator("#student-fulfillment").inner_text()
+    assert "PRIVATE" not in page.locator("body").inner_text()
+    assert not errors
+    page.close()
