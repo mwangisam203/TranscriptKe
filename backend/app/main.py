@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.academic_records import router as academic_records_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.catalog import router as catalog_router
+from app.api.v1.fulfillment import router as fulfillment_router
 from app.api.v1.institutions import router as institutions_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.staff import router as staff_router
@@ -25,6 +26,7 @@ app.include_router(staff_router, prefix="/api/v1")
 app.include_router(catalog_router, prefix="/api/v1")
 app.include_router(academic_records_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
+app.include_router(fulfillment_router, prefix="/api/v1")
 app.add_middleware(AttachmentBodyLimit)
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
