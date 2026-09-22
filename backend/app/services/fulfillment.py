@@ -1,10 +1,12 @@
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.core.permissions import require_academic_staff
 from app.models.academic import AcademicRecordLink
 from app.models.fulfillment import OrderHold, RegistrarCase, RegistrarEvent
 from app.models.institution import Institution
 from app.models.orders import OrderConsent, OrderItem, OrderMessage, OrderQuote
+from app.models.payments import PaymentAttempt
 from app.services.academic import check_version
 from app.services.orders import digest, event, get_order, rows
 
@@ -23,6 +25,17 @@ def actionable(db, user, institution_id, order_id, version):
     check_version(order.version, version)
     if order.user_id == user.id:
         raise HTTPException(403, "Another registrar must handle your order")
+    if order.payment_status in (
+        "refund_requested",
+        "refund_pending",
+        "refunded",
+        "partially_refunded",
+        "disputed",
+        "review_required",
+    ):
+        raise HTTPException(
+            409, "Resolve the payment or refund review before registrar actions"
+        )
     if order.status != "submitted":
         raise HTTPException(
             409, "Only submitted orders without a pending cancellation can be processed"
@@ -58,6 +71,15 @@ def record(db, order, user, action, student_message, internal_note):
 
 def preparation_blockers(db, order, *, include_deferred=True):
     blockers = []
+    if order.payment_status in (
+        "refund_requested",
+        "refund_pending",
+        "refunded",
+        "partially_refunded",
+        "disputed",
+        "review_required",
+    ):
+        blockers.append("Resolve the payment or refund review before fulfillment.")
     institution = db.get(Institution, order.institution_id)
     if not institution.is_active or not institution.is_approved:
         blockers.append("Institution approval is required.")
@@ -146,9 +168,26 @@ def summary(db, order, *, staff=False):
             order.payment_status != "paid"
             and (order.submitted_snapshot or {}).get("total_minor", 1) > 0
         ):
-            release_blockers.append(
-                "Verified payment is required; payment processing is not available yet."
+            release_blockers.append("Verified payment is required before release.")
+        if order.payment_status == "paid":
+            verified = db.scalar(
+                select(PaymentAttempt).where(
+                    PaymentAttempt.order_id == order.id,
+                    PaymentAttempt.status == "succeeded",
+                    PaymentAttempt.paid_at.is_not(None),
+                    PaymentAttempt.refunded_minor == 0,
+                )
             )
+            if verified is None or verified.amount_minor != (
+                order.submitted_snapshot or {}
+            ).get("total_minor"):
+                release_blockers.append(
+                    "A matching provider-confirmed payment is required."
+                )
+            elif verified.mode != "live":
+                release_blockers.append(
+                    "Test payments cannot authorize production issuance."
+                )
         release_blockers.append("Secure issuance and delivery are not implemented yet.")
         consent = (
             db.get(OrderConsent, order.submission_consent_id)
