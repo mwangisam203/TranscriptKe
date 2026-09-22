@@ -148,6 +148,7 @@ they do not use the configured application database or mail provider.
 Registrar review, holds and fulfillment states are now covered by the
 [Milestone 4 guide](milestone-4.md). Next come M-Pesa and
 Stripe or another card gateway with verified payment webhooks, reconciliation and
-refunds (Milestone 5). Orders currently remain `payment_status=not_started`; submission
+refunds (Milestone 5). Orders start at `payment_status=not_started`; [Milestone 5](milestone-5.md) adds
+provider-verified payment after registrar approval. Submission
 is a request, not proof of payment, issuance or delivery. Official PDFs, secure
 recipient delivery, SIS integrations and third-party ordering remain later work.
