@@ -19,7 +19,7 @@ def test_fresh_database_matches_models_and_can_roundtrip(engine):
     with engine.begin() as connection:
         config = migration_config(connection)
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0005"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0006"
         )
         command.check(config)
         command.downgrade(config, "base")
