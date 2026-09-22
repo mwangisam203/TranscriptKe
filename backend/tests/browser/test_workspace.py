@@ -13,6 +13,10 @@ from app.main import app
 from app.models.academic import AcademicRecordLink
 from tests.conftest import PASSWORD
 from tests.test_orders import workflow  # noqa: F401 -- shared ordering setup
+from tests.test_payments import (  # noqa: F401 -- browser payment fixtures
+    gateway,
+    payable,
+)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
@@ -301,5 +305,60 @@ def test_registrar_review_holds_and_student_progress(
     ).wait_for()
     assert "Clearance confirmed." in page.locator("#student-fulfillment").inner_text()
     assert "PRIVATE" not in page.locator("body").inner_text()
+    assert not errors
+    page.close()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_payment_receipt_and_manager_refund(
+    browser,
+    live_url,
+    payable,  # noqa: F811 -- imported fixture
+    gateway,  # noqa: F811 -- imported fixture
+    catalog,
+    width,
+):
+    page = browser.new_page(viewport={"width": width, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    login(page, live_url, payable["user"].email)
+    page.locator("[data-view=orders-view]").click()
+    page.get_by_role("button", name="Open order", exact=True).click()
+    page.get_by_role("button", name="Start payment", exact=True).click()
+    page.get_by_role("link", name="Open secure card checkout", exact=True).wait_for()
+    identifier = gateway.starts[0]
+    gateway.states[identifier] = {
+        "status": "succeeded",
+        "refunded_minor": 0,
+        "transaction_reference": "pi_browser",
+    }
+    page.get_by_role("button", name="Check payment status", exact=True).click()
+    page.locator("#notice").filter(
+        has_text="Payment status checked with the provider."
+    ).wait_for()
+    assert "Payment: paid" in page.locator("#order-state").inner_text()
+    page.get_by_role("button", name="View payment receipt", exact=True).click()
+    page.get_by_text("TEST Payment receipt", exact=True).wait_for()
+    form = page.locator("#student-payments form").filter(
+        has=page.get_by_role("heading", name="Request a full refund", exact=True)
+    )
+    form.locator("[name=reason]").fill("No longer need this order.")
+    form.get_by_role("button", name="Request refund", exact=True).click()
+    page.locator("#notice").filter(has_text="Refund request sent").wait_for()
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    page.locator("#logout").click()
+    page.locator("#authentication").wait_for(state="visible")
+    login(page, live_url, catalog["manager"].email)
+    page.locator("#staff-tab").click()
+    page.get_by_role("button", name="Review order", exact=True).click()
+    page.get_by_role("button", name="Save refund decision", exact=True).click()
+    page.locator("#notice").filter(has_text="Refund decision recorded.").wait_for()
+    assert "cancelled" in page.locator("#staff-order-title").inner_text()
+    assert "refunded" in page.locator("#staff-payments").inner_text()
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
     assert not errors
     page.close()
