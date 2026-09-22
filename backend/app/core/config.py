@@ -27,8 +27,53 @@ class Settings(BaseSettings):
     ATTACHMENT_SCANNER: Literal["disabled", "clamav"] = "disabled"
     CLAMAV_COMMAND: str = "clamscan"
 
+    PAYMENTS_ENABLED: bool = False
+    PAYMENT_MODE: Literal["test", "live"] = "test"
+    PAYMENT_INSTITUTION_ID: int | None = Field(default=None, ge=1)
+    PAYMENT_PUBLIC_URL: str = "http://127.0.0.1:8000"
+    STRIPE_SECRET_KEY: str | None = None
+    STRIPE_WEBHOOK_SECRET: str | None = None
+    MPESA_CONSUMER_KEY: str | None = None
+    MPESA_CONSUMER_SECRET: str | None = None
+    MPESA_SHORTCODE: str | None = None
+    MPESA_PASSKEY: str | None = None
+    MPESA_INITIATOR: str | None = None
+    MPESA_SECURITY_CREDENTIAL: str | None = None
+
     @model_validator(mode="after")
     def validate_deployment(self):
+        if self.PAYMENTS_ENABLED:
+            if len(self.SECRET_KEY) < 32 or self.SECRET_KEY == "change-this-secret-key":
+                raise ValueError(
+                    "Payments require a random SECRET_KEY of at least 32 characters"
+                )
+            from urllib.parse import urlsplit
+
+            url = urlsplit(self.PAYMENT_PUBLIC_URL)
+            if not self.PAYMENT_INSTITUTION_ID:
+                raise ValueError(
+                    "Set PAYMENT_INSTITUTION_ID for the authorized pilot merchant"
+                )
+            if (
+                url.scheme not in ("http", "https")
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.query
+                or url.fragment
+                or url.path not in ("", "/")
+            ):
+                raise ValueError(
+                    "PAYMENT_PUBLIC_URL must be a public origin without credentials or a path"
+                )
+            if self.PAYMENT_MODE == "live" and url.scheme != "https":
+                raise ValueError("Live payments require HTTPS")
+            if self.STRIPE_SECRET_KEY and not self.STRIPE_SECRET_KEY.startswith(
+                "sk_live_" if self.PAYMENT_MODE == "live" else "sk_test_"
+            ):
+                raise ValueError("Stripe key must match PAYMENT_MODE")
+            if self.APP_ENV == "production" and self.PAYMENT_MODE != "live":
+                raise ValueError("Production payments must use live credentials")
         if self.MAIL_BACKEND == "smtp" and not self.SMTP_HOST:
             raise ValueError("SMTP_HOST is required for SMTP delivery")
         if self.APP_ENV == "production":
