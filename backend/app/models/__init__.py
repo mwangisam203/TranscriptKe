@@ -28,9 +28,21 @@ from app.models.orders import (
     OrderQuote,
     OrderRecipient,
 )
+from app.models.payments import (
+    PaymentAttempt,
+    PaymentEvent,
+    PaymentLedger,
+    PaymentRefund,
+    PaymentWebhook,
+)
 from app.models.user import User, UserRole
 
 __all__ = [
+    "PaymentLedger",
+    "PaymentAttempt",
+    "PaymentRefund",
+    "PaymentEvent",
+    "PaymentWebhook",
     "OrderHold",
     "RegistrarCase",
     "RegistrarEvent",
