@@ -135,6 +135,7 @@ Use `TEST_DATABASE_URL` pointing to a disposable PostgreSQL database named
 from the application database and real email providers.
 
 Milestone 5 adds M-Pesa and Stripe or another card processor, verified webhooks,
-payment reconciliation and refunds. Secure issuance, recipient delivery, automated
+payment reconciliation and refunds; see the [Milestone 5 guide](milestone-5.md) for
+the implemented payment workflow and provider setup. Secure issuance, recipient delivery, automated
 SIS checks, workload SLAs and operational notifications remain later work. The
 current workflow uses manual institutional checks and demo institutions.
