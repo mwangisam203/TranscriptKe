@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -10,9 +11,13 @@ from app.api.v1.catalog import router as catalog_router
 from app.api.v1.fulfillment import router as fulfillment_router
 from app.api.v1.institutions import router as institutions_router
 from app.api.v1.orders import router as orders_router
+from app.api.v1.payments import router as payments_router
 from app.api.v1.staff import router as staff_router
 from app.core.config import settings
 from app.services.order_attachments import AttachmentBodyLimit
+from app.services.payment_gateways import PaymentAccessLogFilter
+
+logging.getLogger("uvicorn.access").addFilter(PaymentAccessLogFilter())
 
 app = FastAPI(
     title=f"{settings.APP_NAME} API",
@@ -27,6 +32,7 @@ app.include_router(catalog_router, prefix="/api/v1")
 app.include_router(academic_records_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(fulfillment_router, prefix="/api/v1")
+app.include_router(payments_router, prefix="/api/v1")
 app.add_middleware(AttachmentBodyLimit)
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -47,6 +53,7 @@ async def private_api_responses(request: Request, call_next):
             "/api/v1/auth/",
             "/api/v1/admin/",
             "/api/v1/orders",
+            "/api/v1/payments",
         )
     ):
         response.headers["Cache-Control"] = "no-store"
