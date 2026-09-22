@@ -149,7 +149,7 @@ class OrderEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     version: Mapped[int] = mapped_column(Integer)
-    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     kind: Mapped[str] = mapped_column(String(50))
     message: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
