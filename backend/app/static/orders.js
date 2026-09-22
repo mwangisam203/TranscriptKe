@@ -100,7 +100,7 @@ bindForm("new-order-form", async () => {
   const order = await api("/orders", "POST", {academic_record_link_id: link}, {"Idempotency-Key": O_createKey.key});
   O_createKey = null; await O_open(order.id); await O_list(); notice("Draft created. Add your documents and recipients.");
 });
-function O_summary(container, snapshot) {
+function O_summary(container, snapshot, paymentStatus = "not_started") {
   container.replaceChildren(); if (!snapshot) return;
   container.append(node("h3", "Order details"), node("p", `${snapshot.institution.name} · ${snapshot.academic_record.name_on_record} · ${snapshot.academic_record.admission_number}`), node("p", `Purpose: ${snapshot.purpose}`), node("p", `Release: ${snapshot.release_when.replaceAll("_", " ")} ${snapshot.release_instruction}`));
   for (const recipient of snapshot.recipients) {
@@ -110,7 +110,7 @@ function O_summary(container, snapshot) {
     for (const item of snapshot.items.filter((item) => item.recipient_key === recipient.key)) card.append(node("p", `${item.name} × ${item.quantity}: ${O_money(item.line_total_minor)} · ${item.processing_days_min}–${item.processing_days_max} business days`));
     container.append(card);
   }
-  container.append(node("strong", `Total: ${O_money(snapshot.total_minor)}`), node("p", "Payment has not been collected.", "muted"));
+  container.append(node("strong", `Total: ${O_money(snapshot.total_minor)}`), node("p", `Payment: ${paymentStatus.replaceAll("_", " ")}.`, "muted"));
   if (snapshot.attachments.length) container.append(node("p", `Attachments included in consent: ${snapshot.attachments.map((a) => a.filename).join(", ")}`));
 }
 async function O_open(id) {
@@ -131,9 +131,11 @@ async function O_open(id) {
   $("reorder-button").hidden = !order.submitted_at; $("order-message-form").hidden = !order.submitted_at;
   fillForm($("order-editor"), order); $("order-recipients").replaceChildren(); $("order-items").replaceChildren();
   if (draft) { order.recipients.forEach(O_addRecipient); order.items.forEach(O_addItem); }
-  O_summary($("submitted-order-summary"), order.submitted_snapshot);
+  O_summary($("submitted-order-summary"), order.submitted_snapshot, order.payment_status);
   O_renderAttachments($("order-attachments"), order, null);
   await F_student(order);
+  if (O_current !== order) return;
+  await P_student(order);
   if (O_current !== order) return;
   O_renderTimeline($("order-timeline"), timeline, order);
   O_renderMessages($("order-conversation"), messages);
@@ -245,10 +247,12 @@ async function O_openStaff(context, id) {
   const [order, timeline, messages] = await Promise.all([api(base), api(`${base}/timeline`), api(`${base}/messages`)]);
   if (generation !== O_staffGeneration || staffContext !== context || O_staffContext !== context) return;
   O_staff = order; $("staff-order-detail").hidden = false; $("staff-order-title").textContent = `${order.reference} · ${order.status.replaceAll("_", " ")}`;
-  O_summary($("staff-order-summary"), order.submitted_snapshot); O_renderAttachments($("staff-order-attachments"), order, context.id);
+  O_summary($("staff-order-summary"), order.submitted_snapshot, order.payment_status); O_renderAttachments($("staff-order-attachments"), order, context.id);
   O_renderTimeline($("staff-order-timeline"), timeline, order); O_renderMessages($("staff-order-conversation"), messages);
   $("staff-order-cancel-form").hidden = order.status !== "cancellation_requested";
   await F_staff(context, order);
+  if (O_staff !== order) return;
+  await P_staff(context, order);
 }
 $("refresh-staff-orders").addEventListener("click", () => run(() => O_loadStaff(requireContext())));
 $("more-staff-orders").addEventListener("click", () => run(() => O_loadStaff(requireContext(), true)));
@@ -263,6 +267,7 @@ bindForm("staff-order-cancel-form", async (form) => {
   form.reset(); await O_loadStaff(context); await O_openStaff(context, order.id); notice("Cancellation decision saved.");
 });
 window.ordersWorkspace = {load: O_load, loadStaff: O_loadStaff, reset() {
+  P_keys.clear(); $("student-payments").replaceChildren(); $("staff-payments").replaceChildren();
   $("student-fulfillment").replaceChildren(); $("registrar-workspace").replaceChildren();
   O_queueGeneration++; O_staffGeneration++;
   $("registrar-state").value = ""; $("registrar-mine").checked = false; $("registrar-holds").checked = false;
