@@ -87,7 +87,7 @@ class AttachmentBodyLimit:
         if (
             scope["type"] != "http"
             or scope.get("method") != "POST"
-            or not scope.get("path", "").endswith("/attachments")
+            or not scope.get("path", "").endswith(("/attachments", "/documents"))
         ):
             return await self.app(scope, receive, send)
         consumed = 0
