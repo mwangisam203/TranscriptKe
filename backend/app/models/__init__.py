@@ -17,6 +17,7 @@ from app.models.fulfillment import (
     RegistrarEvent,
 )
 from app.models.institution import Institution
+from app.models.issuance import DocumentDelivery, IssuedDocument
 from app.models.orders import (
     Order,
     OrderAttachment,
@@ -38,6 +39,8 @@ from app.models.payments import (
 from app.models.user import User, UserRole
 
 __all__ = [
+    "DocumentDelivery",
+    "IssuedDocument",
     "PaymentLedger",
     "PaymentAttempt",
     "PaymentRefund",
