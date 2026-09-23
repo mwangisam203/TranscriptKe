@@ -137,6 +137,8 @@ async function O_open(id) {
   if (O_current !== order) return;
   await P_student(order);
   if (O_current !== order) return;
+  await D_student(order);
+  if (O_current !== order) return;
   O_renderTimeline($("order-timeline"), timeline, order);
   O_renderMessages($("order-conversation"), messages);
   options($("order-message-form").elements.in_reply_to_id, messages.filter((m) => m.author_role === "staff" && m.requires_response && !m.answered_at), (m) => m.body, "General message");
@@ -253,6 +255,8 @@ async function O_openStaff(context, id) {
   await F_staff(context, order);
   if (O_staff !== order) return;
   await P_staff(context, order);
+  if (O_staff !== order) return;
+  await D_staff(context, order);
 }
 $("refresh-staff-orders").addEventListener("click", () => run(() => O_loadStaff(requireContext())));
 $("more-staff-orders").addEventListener("click", () => run(() => O_loadStaff(requireContext(), true)));
@@ -267,6 +271,7 @@ bindForm("staff-order-cancel-form", async (form) => {
   form.reset(); await O_loadStaff(context); await O_openStaff(context, order.id); notice("Cancellation decision saved.");
 });
 window.ordersWorkspace = {load: O_load, loadStaff: O_loadStaff, reset() {
+  $("student-documents").replaceChildren(); $("staff-documents").replaceChildren();
   P_keys.clear(); $("student-payments").replaceChildren(); $("staff-payments").replaceChildren();
   $("student-fulfillment").replaceChildren(); $("registrar-workspace").replaceChildren();
   O_queueGeneration++; O_staffGeneration++;
