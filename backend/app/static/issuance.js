@@ -2,6 +2,7 @@
 function D_status(container, document) {
   const delivery = document.delivery;
   container.append(node("p", `${document.mode === "demo" ? "DEMO · " : ""}${document.status}${delivery ? ` · Downloads requested: ${delivery.download_count} · Access expires ${new Date(delivery.expires_at).toLocaleString()}` : ""}`));
+  if (delivery) container.append(node("p", delivery.notified_at ? `Notification accepted for delivery ${new Date(delivery.notified_at).toLocaleString()}` : "Recipient notification is pending."));
   if (document.revocation_reason) container.append(node("p", `Revoked: ${document.revocation_reason}`));
 }
 async function D_student(order) {
@@ -9,7 +10,12 @@ async function D_student(order) {
   if (O_current !== order) return;
   const container = $("student-documents"); container.replaceChildren(node("h3", "Issued documents and delivery"));
   if (!result.documents.length) container.append(node("p", "No documents have been prepared for delivery yet."));
-  for (const document of result.documents) D_status(container, document);
+  for (const document of result.documents) {
+    const item = order.submitted_snapshot?.items.find((i) => i.key === document.item_key);
+    const recipient = order.submitted_snapshot?.recipients.find((r) => r.key === item?.recipient_key);
+    container.append(node("h4", `${item?.name || document.item_key}${recipient ? ` · ${recipient.name}` : ""}`));
+    D_status(container, document);
+  }
   if (result.documents.length) container.append(node("p", "Documents are sent to your authorized recipients. A download request does not confirm that the recipient read the document.", "muted"));
 }
 async function D_staff(context, order) {
