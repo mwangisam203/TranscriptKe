@@ -90,6 +90,20 @@ class FakeMailer:
             raise HTTPException(503, "Email delivery is unavailable; please try again")
         self.messages.append({"email": email, "purpose": purpose, "token": token})
 
+    def send_document(self, email, delivery_id, mode):
+        if self.fail:
+            from fastapi import HTTPException
+
+            raise HTTPException(503, "Email delivery is unavailable; please try again")
+        self.messages.append(
+            {
+                "email": email,
+                "purpose": "document_notification",
+                "delivery_id": delivery_id,
+                "mode": mode,
+            }
+        )
+
     def token(self, purpose, email=None):
         return next(
             message["token"]
