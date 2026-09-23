@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     SMTP_STARTTLS: bool = True
     ATTACHMENT_SCANNER: Literal["disabled", "clamav"] = "disabled"
     CLAMAV_COMMAND: str = "clamscan"
+    ISSUANCE_ENABLED: bool = False
+    ISSUANCE_MODE: Literal["demo", "live"] = "demo"
+    ISSUANCE_PUBLIC_URL: str = "http://127.0.0.1:8000"
+    DELIVERY_EXPIRE_DAYS: int = Field(default=7, ge=1, le=30)
 
     PAYMENTS_ENABLED: bool = False
     PAYMENT_MODE: Literal["test", "live"] = "test"
@@ -42,6 +46,33 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_deployment(self):
+        if self.ISSUANCE_ENABLED:
+            from urllib.parse import urlsplit
+
+            origin = urlsplit(self.ISSUANCE_PUBLIC_URL)
+            if (
+                origin.scheme not in ("http", "https")
+                or not origin.hostname
+                or origin.username
+                or origin.password
+                or origin.query
+                or origin.fragment
+                or origin.path not in ("", "/")
+            ):
+                raise ValueError(
+                    "ISSUANCE_PUBLIC_URL must be an origin without a path or credentials"
+                )
+            if self.ISSUANCE_MODE == "live" and (
+                origin.scheme != "https"
+                or self.ATTACHMENT_SCANNER != "clamav"
+                or self.MAIL_BACKEND != "smtp"
+                or not self.SMTP_STARTTLS
+            ):
+                raise ValueError(
+                    "Live issuance requires HTTPS, ClamAV and SMTP with STARTTLS"
+                )
+            if self.APP_ENV == "production" and self.ISSUANCE_MODE != "live":
+                raise ValueError("Production cannot issue demo documents")
         if self.PAYMENTS_ENABLED:
             if len(self.SECRET_KEY) < 32 or self.SECRET_KEY == "change-this-secret-key":
                 raise ValueError(
