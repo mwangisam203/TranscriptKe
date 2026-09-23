@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.main import app
 from app.models.academic import AcademicRecordLink
 from tests.conftest import PASSWORD
+from tests.test_issuance import PDF, ready, registrar  # noqa: F401 -- issuance fixtures
 from tests.test_orders import workflow  # noqa: F401 -- shared ordering setup
 from tests.test_payments import (  # noqa: F401 -- browser payment fixtures
     gateway,
@@ -357,6 +358,71 @@ def test_payment_receipt_and_manager_refund(
     page.locator("#notice").filter(has_text="Refund decision recorded.").wait_for()
     assert "cancelled" in page.locator("#staff-order-title").inner_text()
     assert "refunded" in page.locator("#staff-payments").inner_text()
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    assert not errors
+    page.close()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_upload_issue_and_recipient_download(
+    browser, live_url, ready, catalog, mailer, width  # noqa: F811
+):
+    page = browser.new_page(viewport={"width": width, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    login(page, live_url, catalog["staff"].email)
+    page.locator("#staff-tab").click()
+    page.get_by_role("button", name="Review order", exact=True).click()
+    page.locator("#staff-documents input[type=file]").set_input_files(
+        {"name": "transcript.pdf", "mimeType": "application/pdf", "buffer": PDF}
+    )
+    page.get_by_role("button", name="Upload PDF", exact=True).click()
+    page.locator("#notice").filter(has_text="PDF uploaded and scanned.").wait_for()
+    page.locator("#staff-documents [name=attested]").check()
+    page.locator("#staff-documents [name=internal_note]").fill(
+        "Original and recipient verified."
+    )
+    page.get_by_role("button", name="Issue document", exact=True).click()
+    page.get_by_role(
+        "button", name="Send recipient notification", exact=True
+    ).wait_for()
+    with page.expect_response(
+        lambda response: (
+            response.url.endswith("/notify") and response.request.method == "POST"
+        )
+    ) as notified:
+        page.get_by_role(
+            "button", name="Send recipient notification", exact=True
+        ).click()
+    assert notified.value.status == 200, notified.value.text()
+    page.locator("#staff-documents").filter(has_text="DEMO").wait_for()
+    page.wait_for_function(
+        "() => !document.querySelector('#staff-documents button[disabled]')"
+    )
+    # Wait for the asynchronous notification API to complete before reading fake mail.
+    page.locator("#notice").filter(has_text="Document update saved.").wait_for()
+    notification = next(
+        m for m in reversed(mailer.messages) if m["purpose"] == "document_notification"
+    )
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    page.goto(live_url + "/recipient#" + notification["delivery_id"])
+    page.locator("[name=email]").fill("admissions@example.com")
+    page.get_by_role("button", name="Send access code", exact=True).click()
+    page.locator("#recipient-notice").filter(
+        has_text="an access code will be sent"
+    ).wait_for()
+    page.locator("[name=code]").fill(mailer.token("document_access"))
+    with page.expect_download() as download:
+        page.get_by_role("button", name="Download document", exact=True).click()
+    result = download.value
+    assert result.suggested_filename.startswith("DEMO-document-")
+    from pathlib import Path
+
+    assert Path(result.path()).read_bytes() == PDF
     assert page.evaluate(
         "() => document.documentElement.scrollWidth <= window.innerWidth"
     )
