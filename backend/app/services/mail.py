@@ -21,6 +21,29 @@ class Mailer:
             f"{token}\n\nIt expires in {minutes} minutes and can be used once.\n"
             "If you did not expect this message, you can ignore it.\n"
         )
+        self._deliver(message)
+
+    def send_document(self, email: str, delivery_id: str, mode: str) -> None:
+        message = EmailMessage()
+        message["From"] = settings.MAIL_FROM
+        message["To"] = email
+        label = "DEMO — " if mode == "demo" else ""
+        message["Subject"] = f"{label}TranscriptsKE: document available"
+        url = f"{settings.ISSUANCE_PUBLIC_URL.rstrip('/')}/recipient#{delivery_id}"
+        message.set_content(
+            f"{label}An institution has made a document available to this email address.\n\n"
+            f"Open {url}\n\n"
+            "Enter this email address to request a single-use access code. "
+            "The link expires; contact the institution if unavailable.\n"
+            + (
+                "This is a demonstration delivery, not a live academic credential.\n"
+                if mode == "demo"
+                else ""
+            )
+        )
+        self._deliver(message)
+
+    def _deliver(self, message):
         try:
             if settings.MAIL_BACKEND == "file":
                 settings.MAIL_DIRECTORY.mkdir(mode=0o700, parents=True, exist_ok=True)
