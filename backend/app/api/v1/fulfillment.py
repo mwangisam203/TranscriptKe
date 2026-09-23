@@ -130,6 +130,13 @@ def release_confirmation(
     case.release_confirmed_by = user.id if payload.confirmed else None
     case.release_evidence = payload.internal_note
     if not payload.confirmed:
+        if any(
+            i.fulfillment_status in ("issued", "delivered")
+            for i in rows(db, OrderItem, order.id)
+        ):
+            raise HTTPException(
+                409, "Revoke issued documents before withdrawing release confirmation"
+            )
         for item in rows(db, OrderItem, order.id):
             if item.fulfillment_status == "ready":
                 item.fulfillment_status = "processing"
@@ -167,6 +174,16 @@ def item_decision(
         "ready": ("processing", "ready"),
     }
     if payload.decision == "reopen":
+        from sqlalchemy import select
+
+        from app.models.issuance import IssuedDocument
+
+        if db.scalar(
+            select(IssuedDocument.id).where(IssuedDocument.active_item_id == item.id)
+        ):
+            raise HTTPException(
+                409, "Revoke the prepared document before reopening this item"
+            )
         require_academic_staff(db, user, institution_id, manage=True)
         if item.fulfillment_status not in ("processing", "ready", "rejected"):
             raise HTTPException(409, "This item cannot be reopened")
@@ -222,6 +239,8 @@ def registrar_queue(
         "ready",
         "rejected",
         "cancelled",
+        "issued",
+        "delivered",
     ):
         raise HTTPException(422, "Unknown document state")
     if unassigned and assigned_to is not None:
