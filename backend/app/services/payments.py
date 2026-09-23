@@ -438,6 +438,16 @@ def reconcile(db, order, payment, gateway):
 
 def request_refund(db, order, payment, user, reason, version, *, approve=False):
     check_version(order.version, version)
+    from app.models.issuance import IssuedDocument
+
+    if db.scalar(
+        select(IssuedDocument.id).where(
+            IssuedDocument.order_id == order.id, IssuedDocument.issued_at.is_not(None)
+        )
+    ):
+        raise HTTPException(
+            409, "Issued orders require a separate institutional refund investigation"
+        )
     if user.id == order.user_id and approve:
         raise HTTPException(403, "Another manager must approve your refund")
     if (
