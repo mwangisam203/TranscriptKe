@@ -139,3 +139,5 @@ payment reconciliation and refunds; see the [Milestone 5 guide](milestone-5.md) 
 the implemented payment workflow and provider setup. Secure issuance, recipient delivery, automated
 SIS checks, workload SLAs and operational notifications remain later work. The
 current workflow uses manual institutional checks and demo institutions.
+
+Milestone 6 replaces the permanent release blocker with configured issuance checks; see [secure PDF issuance and delivery](milestone-6.md).
