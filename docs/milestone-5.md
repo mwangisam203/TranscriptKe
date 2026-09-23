@@ -164,7 +164,7 @@ This project uses certificate-verified HTTP requests and bounded timeouts.
 
 The application never accepts a client-supplied `paid` status. Institutions can
 inspect transaction history and reconcile against providers, but cannot override
-provider verification. Official issuance and delivery remain unavailable.
+provider verification. Milestone 6 adds institution-prepared PDF issuance and recipient delivery; see [the Milestone 6 guide](milestone-6.md).
 
 ## Refund workflow
 
