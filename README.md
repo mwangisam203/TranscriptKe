@@ -1,11 +1,11 @@
 # TranscriptsKE
 
 TranscriptsKE is a Kenyan academic transcript request and verification platform.
-The current release implements **Milestones 1–5: accounts, institution services,
-academic matching, ordering, registrar review, and payment/refund workflows**.
+The current release implements **Milestones 1–6: accounts, institution services,
+academic matching, ordering, registrar review, payments/refunds, and secure PDF delivery**.
 Stripe-hosted card checkout and M-Pesa STK Push are implemented behind explicit
-merchant configuration and are disabled by default. Official issuance and document
-delivery remain planned.
+merchant configuration and are disabled by default. Institution-prepared PDF issuance
+and secure recipient delivery are also disabled until configured.
 
 ## Implemented
 
@@ -23,6 +23,8 @@ delivery remain planned.
 - Registrar assignment, document review, holds, preparation states and release-condition checks.
 - Payment after registrar approval, Stripe/M-Pesa adapters, authenticated callbacks, receipts and reconciliation.
 - Manager-reviewed full refunds and an append-only charge/refund ledger.
+- Scanned institution-prepared PDFs, registrar release attestations and manager revocation.
+- Expiring recipient delivery with single-use email codes, retryable notifications and download history.
 - A browser workspace for students, staff, managers and institution approvals.
 - Institution memberships, authorized invitations, manager/staff permissions, and revocation.
 - Audit records for email verification, password changes, administrator bootstrap, and staff access changes.
@@ -103,21 +105,25 @@ Review legacy invalid email addresses with their owners before migration if any 
 Downgrading does not restore the old verification flags.
 
 For an existing Milestone 1 database already at `0002`, run `uv run alembic upgrade head`
-to apply `0003` through `0006`. It preserves verified accounts, sessions and memberships. Existing
+to apply `0003` through `0007`. It preserves verified accounts, sessions and memberships. Existing
 institutions start **unapproved** and must be approved by a platform administrator
 before becoming publicly available or accepting matching submissions.
 
 For an existing Milestone 2 database at `0003`, `uv run alembic upgrade head` adds
-revisions `0004` through `0006` without changing existing accounts, catalog data or record matches.
+revisions `0004` through `0007` without changing existing accounts, catalog data or record matches.
 See the [Milestone 3 guide](docs/milestone-3.md) for the workflow, endpoints and attachment setup.
 
 For an existing Milestone 3 database at `0004`, `uv run alembic upgrade head` applies
-`0005` and `0006`. See the [Milestone 4 guide](docs/milestone-4.md) for registrar workflows,
+`0005` through `0007`. See the [Milestone 4 guide](docs/milestone-4.md) for registrar workflows,
 permissions and release boundaries.
 
 For a Milestone 4 database at `0005`, `uv run alembic upgrade head` applies payment
-migration `0006`. Configure providers using the [Milestone 5 guide](docs/milestone-5.md).
+migration `0006` and issuance migration `0007`. Configure providers using the [Milestone 5 guide](docs/milestone-5.md).
 No real provider transactions are exercised by the automated suite.
+
+For existing Milestone 5 databases, `uv run alembic upgrade head` adds migration `0007`.
+See the [Milestone 6 guide](docs/milestone-6.md) for scanner configuration, recipient
+access and the scheduled notification worker. Issuance remains disabled by default.
 
 ## Try registration and verification
 
@@ -305,7 +311,10 @@ and [FastAPI testing documentation](https://fastapi.tiangolo.com/tutorial/testin
 
 Milestone 5 adds **Stripe card payments and M-Pesa** after registrar approval.
 Provider credentials and sandbox acceptance are still required before enabling collection.
-Trusted issuance/delivery and pilot operations follow; submission or a browser redirect
+Milestone 6 implements institution-prepared PDFs, release checks, expiring recipient
+delivery, email access codes, and manager revocation. See the [Milestone 6 guide](docs/milestone-6.md)
+for migration `0007`, scanner/mail configuration and the notification worker.
+Pilot operations and real-provider acceptance follow; submission or a browser redirect
 is never proof of payment or official document issuance.
 The basic workspace can evolve into the planned Next.js frontend. MFA, SIS integrations,
 third-party ordering, and credential verification remain future work.
