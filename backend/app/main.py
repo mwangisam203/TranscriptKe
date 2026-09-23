@@ -10,6 +10,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.catalog import router as catalog_router
 from app.api.v1.fulfillment import router as fulfillment_router
 from app.api.v1.institutions import router as institutions_router
+from app.api.v1.issuance import router as issuance_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.staff import router as staff_router
@@ -33,6 +34,7 @@ app.include_router(academic_records_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(fulfillment_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
+app.include_router(issuance_router, prefix="/api/v1")
 app.add_middleware(AttachmentBodyLimit)
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -54,6 +56,7 @@ async def private_api_responses(request: Request, call_next):
             "/api/v1/admin/",
             "/api/v1/orders",
             "/api/v1/payments",
+            "/api/v1/deliveries",
         )
     ):
         response.headers["Cache-Control"] = "no-store"
@@ -64,6 +67,19 @@ async def private_api_responses(request: Request, call_next):
 def workspace():
     return FileResponse(
         STATIC_DIRECTORY / "workspace.html",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.get("/recipient", include_in_schema=False)
+def recipient():
+    return FileResponse(
+        STATIC_DIRECTORY / "recipient.html",
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
