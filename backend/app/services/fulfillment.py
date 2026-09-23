@@ -1,12 +1,10 @@
 from fastapi import HTTPException
-from sqlalchemy import select
 
 from app.core.permissions import require_academic_staff
 from app.models.academic import AcademicRecordLink
 from app.models.fulfillment import OrderHold, RegistrarCase, RegistrarEvent
 from app.models.institution import Institution
 from app.models.orders import OrderConsent, OrderItem, OrderMessage, OrderQuote
-from app.models.payments import PaymentAttempt
 from app.services.academic import check_version
 from app.services.orders import digest, event, get_order, rows
 
@@ -160,35 +158,9 @@ def summary(db, order, *, staff=False):
     if staff:
         case = db.get(RegistrarCase, order.id)
         blockers = preparation_blockers(db, order)
-        release_blockers = list(blockers)
-        items = rows(db, OrderItem, order.id)
-        if not items or any(i.fulfillment_status != "ready" for i in items):
-            release_blockers.append("Every document must be ready.")
-        if (
-            order.payment_status != "paid"
-            and (order.submitted_snapshot or {}).get("total_minor", 1) > 0
-        ):
-            release_blockers.append("Verified payment is required before release.")
-        if order.payment_status == "paid":
-            verified = db.scalar(
-                select(PaymentAttempt).where(
-                    PaymentAttempt.order_id == order.id,
-                    PaymentAttempt.status == "succeeded",
-                    PaymentAttempt.paid_at.is_not(None),
-                    PaymentAttempt.refunded_minor == 0,
-                )
-            )
-            if verified is None or verified.amount_minor != (
-                order.submitted_snapshot or {}
-            ).get("total_minor"):
-                release_blockers.append(
-                    "A matching provider-confirmed payment is required."
-                )
-            elif verified.mode != "live":
-                release_blockers.append(
-                    "Test payments cannot authorize production issuance."
-                )
-        release_blockers.append("Secure issuance and delivery are not implemented yet.")
+        from app.services.issuance import release_blockers as issuance_blockers
+
+        release_blockers = issuance_blockers(db, order)
         consent = (
             db.get(OrderConsent, order.submission_consent_id)
             if order.submission_consent_id
@@ -206,7 +178,7 @@ def summary(db, order, *, staff=False):
             release_confirmed_at=case.release_confirmed_at if case else None,
             preparation_blockers=blockers,
             release_blockers=release_blockers,
-            can_release=False,
+            can_release=not release_blockers,
             history=[
                 {
                     "action": e.action,
