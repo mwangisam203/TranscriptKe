@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.academic_records import router as academic_records_router
@@ -11,12 +11,15 @@ from app.api.v1.catalog import router as catalog_router
 from app.api.v1.fulfillment import router as fulfillment_router
 from app.api.v1.institutions import router as institutions_router
 from app.api.v1.issuance import router as issuance_router
+from app.api.v1.operations import router as operations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.staff import router as staff_router
 from app.core.config import settings
+from app.db.session import get_db
 from app.services.order_attachments import AttachmentBodyLimit
 from app.services.payment_gateways import PaymentAccessLogFilter
+from app.services.readiness import database_ready
 
 logging.getLogger("uvicorn.access").addFilter(PaymentAccessLogFilter())
 
@@ -35,6 +38,7 @@ app.include_router(orders_router, prefix="/api/v1")
 app.include_router(fulfillment_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
 app.include_router(issuance_router, prefix="/api/v1")
+app.include_router(operations_router, prefix="/api/v1")
 app.add_middleware(AttachmentBodyLimit)
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -105,3 +109,13 @@ def health_check():
         "app": settings.APP_NAME,
         "environment": settings.APP_ENV,
     }
+
+
+@app.get("/health/ready")
+def readiness_probe(db=Depends(get_db)):
+    ready = database_ready(db)
+    return JSONResponse(
+        {"status": "ready" if ready else "unavailable"},
+        status_code=200 if ready else 503,
+        headers={"Cache-Control": "no-store"},
+    )
