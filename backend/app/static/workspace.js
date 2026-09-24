@@ -21,6 +21,7 @@ function bindForm(id, fn) {
 }
 function signOutView() {
   window.ordersWorkspace?.reset();
+  window.operationsWorkspace?.reset();
   sessionGeneration++; accessToken = ""; currentUser = null; staffContext = null;
   memberships = []; studentServices = []; publicInstitutions = []; adminInstitutions = [];
   editingService = revisingLink = reviewingLink = null;
@@ -198,16 +199,20 @@ function renderHistory(container, events, staff) {
 async function loadStaff() {
   const generation = ++staffLoad, id = Number($("staff-institution").value);
   staffContext = null; reviewingLink = null; editingService = null;
+  window.operationsWorkspace?.reset();
   $("review-area").hidden = true; $("manager-tools").hidden = true; $("match-list").replaceChildren();
   if (!id) return;
   const [institution, services, policy] = await Promise.all([api(`/staff/institutions/${id}`), api(`/staff/institutions/${id}/services`), api(`/staff/institutions/${id}/ordering-policy`)]);
   if (generation !== staffLoad) return;
   const manager = memberships.some((item) => item.institution_id === id && item.role === "manager");
-  staffContext = {id, services, policy, manager};
+  const context = {id, services, policy, manager};
+  staffContext = context;
   $("staff-institution-status").textContent = `${institution.name} · ${institution.is_approved ? "Approved institution" : "Awaiting platform approval"}`;
   $("manager-tools").hidden = !manager;
   fillForm($("policy-form"), policy); renderServices(); resetServiceForm(); await loadMatches();
-  await window.ordersWorkspace?.loadStaff(staffContext);
+  if (generation !== staffLoad || staffContext !== context) return;
+  await window.ordersWorkspace?.loadStaff(context);
+  if (generation === staffLoad && staffContext === context) await window.operationsWorkspace?.load(context);
 }
 $("staff-institution").addEventListener("change", () => run(loadStaff));
 function requireContext() { if (!staffContext) throw new Error("Select an institution and wait for it to load."); return staffContext; }
