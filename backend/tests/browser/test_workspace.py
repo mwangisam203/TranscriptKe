@@ -13,6 +13,7 @@ from app.main import app
 from app.models.academic import AcademicRecordLink
 from tests.conftest import PASSWORD
 from tests.test_issuance import PDF, ready, registrar  # noqa: F401 -- issuance fixtures
+from tests.test_operations import operations  # noqa: F401 -- pilot operations fixture
 from tests.test_orders import workflow  # noqa: F401 -- shared ordering setup
 from tests.test_payments import (  # noqa: F401 -- browser payment fixtures
     gateway,
@@ -367,7 +368,12 @@ def test_payment_receipt_and_manager_refund(
 
 @pytest.mark.parametrize("width", [1280, 390])
 def test_upload_issue_and_recipient_download(
-    browser, live_url, ready, catalog, mailer, width  # noqa: F811
+    browser,
+    live_url,
+    ready,  # noqa: F811 -- imported fixture
+    catalog,
+    mailer,
+    width,  # noqa: F811
 ):
     page = browser.new_page(viewport={"width": width, "height": 900})
     errors = []
@@ -426,5 +432,59 @@ def test_upload_issue_and_recipient_download(
     assert page.evaluate(
         "() => document.documentElement.scrollWidth <= window.innerWidth"
     )
+    assert not errors
+    page.close()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_manager_operations_dashboard_and_private_follow_up(
+    browser,
+    live_url,
+    operations,  # noqa: F811 -- imported fixture
+    catalog,
+    db,
+    width,  # noqa: F811
+):
+    from datetime import timedelta
+
+    from app.models.operations import OperationsCase
+    from app.models.orders import Order
+    from app.services.orders import utcnow
+
+    w = operations
+    db.get(Order, w["order"]["id"]).processing_due_at = utcnow() - timedelta(days=1)
+    db.commit()
+    page = browser.new_page(viewport={"width": width, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    login(page, live_url, catalog["manager"].email)
+    page.locator("#staff-tab").click()
+    page.locator("#operations-queue h4").filter(
+        has_text=w["order"]["reference"]
+    ).wait_for()
+    assert "Past planning target (1)" in page.locator("#operations-queue").inner_text()
+    page.get_by_role("button", name="Review follow-up", exact=True).click()
+    page.locator("#operations-case [name=note]").fill(
+        "PRIVATE: manager will contact the registrar."
+    )
+    page.get_by_role("button", name="Save operations review", exact=True).click()
+    page.locator("#notice").filter(has_text="Operations review saved.").wait_for()
+    assert (
+        db.get(OperationsCase, w["order"]["id"]).note
+        == "PRIVATE: manager will contact the registrar."
+    )
+    page.get_by_role("button", name="Open order workflow", exact=True).click()
+    page.locator("#staff-order-title").filter(
+        has_text=w["order"]["reference"]
+    ).wait_for()
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth"
+    )
+    page.locator("#logout").click()
+    page.locator("#authentication").wait_for(state="visible")
+    assert page.locator("#operations-case").inner_text() == ""
+    login(page, live_url, catalog["staff"].email)
+    page.locator("#staff-tab").click()
+    assert page.locator("#operations-panel").is_hidden()
     assert not errors
     page.close()
