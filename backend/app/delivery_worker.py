@@ -11,9 +11,15 @@ from app.models.issuance import DocumentDelivery, IssuedDocument
 from app.services.issuance import aware, locked_delivery, notify_delivery
 from app.services.mail import Mailer
 from app.services.orders import utcnow
+from app.services.worker_runs import tracked_run
 
 
 def run(limit=100):
+    with tracked_run(SessionLocal, "deliveries") as counts:
+        return _run(limit, counts)
+
+
+def _run(limit, counts):
     cutoff = utcnow() - timedelta(minutes=5)
     with SessionLocal() as db:
         ids = list(
@@ -48,9 +54,12 @@ def run(limit=100):
                     continue
                 notify_delivery(db, order, doc, delivery, Mailer())
                 sent += 1
+                counts["processed"] += 1
             except HTTPException:
                 db.rollback()
                 failed += 1
+                counts["processed"] += 1
+                counts["failed"] += 1
     return {"sent": sent, "failed": failed}
 
 
