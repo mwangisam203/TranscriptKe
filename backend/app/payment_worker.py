@@ -13,9 +13,15 @@ from app.models.payments import PaymentAttempt
 from app.services.orders import utcnow
 from app.services.payment_gateways import get_gateways
 from app.services.payments import reconcile
+from app.services.worker_runs import tracked_run
 
 
 def run(limit=100):
+    with tracked_run(lambda: Session(engine), "payments") as counts:
+        return _run(limit, counts)
+
+
+def _run(limit, counts):
     gateway = get_gateways()
     with Session(engine) as db:
         identifiers = db.scalars(
@@ -40,9 +46,12 @@ def run(limit=100):
                 order, payment = locked_system_payment(db, identifier)
                 reconcile(db, order, payment, gateway)
                 success += 1
+                counts["processed"] += 1
             except HTTPException:
                 db.rollback()
                 failed += 1
+                counts["processed"] += 1
+                counts["failed"] += 1
     print(
         f"Reconciled {success} payment(s); {failed} require another attempt or provider investigation."
     )
