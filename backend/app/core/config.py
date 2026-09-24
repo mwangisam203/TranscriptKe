@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     ISSUANCE_MODE: Literal["demo", "live"] = "demo"
     ISSUANCE_PUBLIC_URL: str = "http://127.0.0.1:8000"
     DELIVERY_EXPIRE_DAYS: int = Field(default=7, ge=1, le=30)
+    OPERATIONS_PAYMENT_PENDING_MINUTES: int = Field(default=30, ge=5, le=1440)
+    OPERATIONS_NOTIFICATION_PENDING_MINUTES: int = Field(default=15, ge=5, le=1440)
+    OPERATIONS_WORKER_STALE_MINUTES: int = Field(default=15, ge=5, le=1440)
 
     PAYMENTS_ENABLED: bool = False
     PAYMENT_MODE: Literal["test", "live"] = "test"
@@ -119,6 +122,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
+        hide_input_in_errors=True,
     )
 
 
