@@ -1,8 +1,8 @@
 # TranscriptsKE
 
 TranscriptsKE is a Kenyan academic transcript request and verification platform.
-The current release implements **Milestones 1–6: accounts, institution services,
-academic matching, ordering, registrar review, payments/refunds, and secure PDF delivery**.
+The current release implements **Milestones 1–7: accounts, institution services, academic matching, ordering,
+registrar review, payments/refunds, secure PDF delivery, and pilot operations**.
 Stripe-hosted card checkout and M-Pesa STK Push are implemented behind explicit
 merchant configuration and are disabled by default. Institution-prepared PDF issuance
 and secure recipient delivery are also disabled until configured.
@@ -25,6 +25,8 @@ and secure recipient delivery are also disabled until configured.
 - Manager-reviewed full refunds and an append-only charge/refund ledger.
 - Scanned institution-prepared PDFs, registrar release attestations and manager revocation.
 - Expiring recipient delivery with single-use email codes, retryable notifications and download history.
+- Institution-scoped manager operations queues, planning targets and audited follow-ups.
+- Worker run history, read-only deployment diagnostics and a database readiness probe.
 - A browser workspace for students, staff, managers and institution approvals.
 - Institution memberships, authorized invitations, manager/staff permissions, and revocation.
 - Audit records for email verification, password changes, administrator bootstrap, and staff access changes.
@@ -105,25 +107,30 @@ Review legacy invalid email addresses with their owners before migration if any 
 Downgrading does not restore the old verification flags.
 
 For an existing Milestone 1 database already at `0002`, run `uv run alembic upgrade head`
-to apply `0003` through `0007`. It preserves verified accounts, sessions and memberships. Existing
+to apply `0003` through `0008`. It preserves verified accounts, sessions and memberships. Existing
 institutions start **unapproved** and must be approved by a platform administrator
 before becoming publicly available or accepting matching submissions.
 
 For an existing Milestone 2 database at `0003`, `uv run alembic upgrade head` adds
-revisions `0004` through `0007` without changing existing accounts, catalog data or record matches.
+revisions `0004` through `0008` without changing existing accounts, catalog data or record matches.
 See the [Milestone 3 guide](docs/milestone-3.md) for the workflow, endpoints and attachment setup.
 
 For an existing Milestone 3 database at `0004`, `uv run alembic upgrade head` applies
-`0005` through `0007`. See the [Milestone 4 guide](docs/milestone-4.md) for registrar workflows,
+`0005` through `0008`. See the [Milestone 4 guide](docs/milestone-4.md) for registrar workflows,
 permissions and release boundaries.
 
 For a Milestone 4 database at `0005`, `uv run alembic upgrade head` applies payment
-migration `0006` and issuance migration `0007`. Configure providers using the [Milestone 5 guide](docs/milestone-5.md).
+migration `0006` and migrations `0007`–`0008` for issuance and operations. Configure providers using the [Milestone 5 guide](docs/milestone-5.md).
 No real provider transactions are exercised by the automated suite.
 
-For existing Milestone 5 databases, `uv run alembic upgrade head` adds migration `0007`.
+For existing Milestone 5 databases, `uv run alembic upgrade head` adds migrations `0007` and `0008`.
 See the [Milestone 6 guide](docs/milestone-6.md) for scanner configuration, recipient
 access and the scheduled notification worker. Issuance remains disabled by default.
+
+For existing Milestone 6 databases, `uv run alembic upgrade head` adds migration `0008`.
+See the [Milestone 7 guide](docs/milestone-7.md) for manager queues, worker health,
+planning targets and `uv run python -m app.readiness --live`. `/health/ready` checks
+database connectivity and migration status without exposing deployment details.
 
 ## Try registration and verification
 
@@ -261,8 +268,8 @@ Implicit TLS on port 465 is not implemented; use the provider's STARTTLS endpoin
 `APP_ENV=production` requires SMTP with STARTTLS and a secret at least 32 characters
 long. Email submission is synchronous with a 10-second connection timeout. Provider
 errors return `503`, and the pending database transaction rolls back. If a mail provider
-accepts a message but a database commit subsequently fails, request a new code. A durable
-mail queue and provider bounce/retry handling belong to a later operational milestone.
+accepts a message but a database commit subsequently fails, request a new code. Document availability notifications have a durable retry workflow; account-verification
+email remains synchronous, and provider bounce handling is not implemented.
 
 No real SMTP delivery is exercised by the automated suite. Production also needs
 HTTPS and deployment configuration; completion of this milestone is not a public-launch gate.
@@ -314,7 +321,9 @@ Provider credentials and sandbox acceptance are still required before enabling c
 Milestone 6 implements institution-prepared PDFs, release checks, expiring recipient
 delivery, email access codes, and manager revocation. See the [Milestone 6 guide](docs/milestone-6.md)
 for migration `0007`, scanner/mail configuration and the notification worker.
-Pilot operations and real-provider acceptance follow; submission or a browser redirect
+Milestone 7 adds manager operations queues, follow-up notes, planning targets and
+worker/deployment diagnostics. See the [Milestone 7 guide](docs/milestone-7.md).
+Real institution and provider acceptance remains required; submission or a browser redirect
 is never proof of payment or official document issuance.
 The basic workspace can evolve into the planned Next.js frontend. MFA, SIS integrations,
 third-party ordering, and credential verification remain future work.
