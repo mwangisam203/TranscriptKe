@@ -168,7 +168,8 @@ actual ClamAV, SMTP and provider acceptance must be checked during deployment.
 Deferred: PDF generation from SIS data, institution signing keys and signature
 validation, public credential verification, postal dispatch and collection receipts,
 carrier integrations, document retention automation, object storage, and external
-email delivery/bounce callbacks. The next phase is pilot operational readiness and
-end-to-end acceptance with real institution processes and configured providers.
+email delivery/bounce callbacks. Milestone 7 implements pilot operations queues and deployment diagnostics; see the
+[Milestone 7 guide](milestone-7.md). End-to-end acceptance with real institution
+processes and configured providers remains required.
 
 Security reference: [OWASP File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html).
