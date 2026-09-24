@@ -23,6 +23,7 @@ from app.models.orders import (
 from app.models.user import User
 from app.schemas.orders import AttachmentRead, CancellationRead, DraftInput, OrderRead
 from app.services.academic import check_version
+from app.services.order_timing import planning_target
 
 CONSENT_VERSION = "2026-09-v1"
 CONSENT_TEXT = (
@@ -380,6 +381,7 @@ def submit_order(db, order, user, payload, key):
     order.status = "submitted"
     order.submitted_snapshot = quote.snapshot
     order.submitted_at = utcnow()
+    order.processing_due_at = planning_target(order.submitted_at, quote.snapshot)
     order.submission_key = key
     order.submission_quote_id = quote.id
     order.submission_consent_id = consent.id
