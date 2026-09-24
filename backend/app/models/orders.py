@@ -60,6 +60,9 @@ class Order(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
 
 
 class OrderRecipient(Base):
