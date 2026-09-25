@@ -14,6 +14,7 @@ from app.api.v1.issuance import router as issuance_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
+from app.api.v1.pilot import router as pilot_router
 from app.api.v1.staff import router as staff_router
 from app.core.config import settings
 from app.db.session import get_db
@@ -39,6 +40,7 @@ app.include_router(fulfillment_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
 app.include_router(issuance_router, prefix="/api/v1")
 app.include_router(operations_router, prefix="/api/v1")
+app.include_router(pilot_router, prefix="/api/v1")
 app.add_middleware(AttachmentBodyLimit)
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
