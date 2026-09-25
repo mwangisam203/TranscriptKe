@@ -8,6 +8,7 @@ from app.core.security import get_verified_user
 from app.db.session import get_db
 from app.models.academic import InstitutionService, OrderingPolicy
 from app.models.institution import Institution
+from app.models.pilot import InstitutionOnboarding
 from app.models.user import User, UserRole
 from app.schemas.academic import (
     ApprovalWrite,
@@ -25,6 +26,7 @@ from app.services.academic import (
     lock_institution,
     public_institution,
 )
+from app.services.pilot import setup_blockers
 
 router = APIRouter(tags=["institution catalog"])
 
@@ -248,6 +250,21 @@ def approve_institution(
     institution = lock_institution(db, institution_id)
     if institution.is_approved != payload.expected_approved:
         raise HTTPException(409, "Institution approval changed. Reload before saving.")
+    onboarding = db.get(InstitutionOnboarding, institution_id)
+    if payload.approved and onboarding and onboarding.status != "approved":
+        raise HTTPException(
+            409, "Complete the onboarding review before approving this institution"
+        )
+    if payload.approved and onboarding:
+        blockers = setup_blockers(db, institution_id)
+        if blockers:
+            raise HTTPException(
+                409,
+                {
+                    "message": "Institution setup changed after onboarding",
+                    "blockers": blockers,
+                },
+            )
     institution.is_approved = payload.approved
     audit(
         db,
