@@ -1,8 +1,8 @@
 # TranscriptsKE
 
 TranscriptsKE is a Kenyan academic transcript request and verification platform.
-The current release implements **Milestones 1–7: accounts, institution services, academic matching, ordering,
-registrar review, payments/refunds, secure PDF delivery, and pilot operations**.
+The current release implements **Milestones 1–8: accounts, institution services, academic matching, ordering,
+registrar review, payments/refunds, secure PDF delivery, pilot operations, and reviewed expansion planning**.
 Stripe-hosted card checkout and M-Pesa STK Push are implemented behind explicit
 merchant configuration and are disabled by default. Institution-prepared PDF issuance
 and secure recipient delivery are also disabled until configured.
@@ -26,6 +26,7 @@ and secure recipient delivery are also disabled until configured.
 - Scanned institution-prepared PDFs, registrar release attestations and manager revocation.
 - Expiring recipient delivery with single-use email codes, retryable notifications and download history.
 - Institution-scoped manager operations queues, planning targets and audited follow-ups.
+- Controlled institution onboarding, private acceptance evidence and independently reviewed pilot evaluations.
 - Worker run history, read-only deployment diagnostics and a database readiness probe.
 - A browser workspace for students, staff, managers and institution approvals.
 - Institution memberships, authorized invitations, manager/staff permissions, and revocation.
@@ -107,30 +108,34 @@ Review legacy invalid email addresses with their owners before migration if any 
 Downgrading does not restore the old verification flags.
 
 For an existing Milestone 1 database already at `0002`, run `uv run alembic upgrade head`
-to apply `0003` through `0008`. It preserves verified accounts, sessions and memberships. Existing
+to apply `0003` through `0009`. It preserves verified accounts, sessions and memberships. Existing
 institutions start **unapproved** and must be approved by a platform administrator
 before becoming publicly available or accepting matching submissions.
 
 For an existing Milestone 2 database at `0003`, `uv run alembic upgrade head` adds
-revisions `0004` through `0008` without changing existing accounts, catalog data or record matches.
+revisions `0004` through `0009` without changing existing accounts, catalog data or record matches.
 See the [Milestone 3 guide](docs/milestone-3.md) for the workflow, endpoints and attachment setup.
 
 For an existing Milestone 3 database at `0004`, `uv run alembic upgrade head` applies
-`0005` through `0008`. See the [Milestone 4 guide](docs/milestone-4.md) for registrar workflows,
+`0005` through `0009`. See the [Milestone 4 guide](docs/milestone-4.md) for registrar workflows,
 permissions and release boundaries.
 
 For a Milestone 4 database at `0005`, `uv run alembic upgrade head` applies payment
-migration `0006` and migrations `0007`–`0008` for issuance and operations. Configure providers using the [Milestone 5 guide](docs/milestone-5.md).
+migration `0006` and migrations `0007`–`0009` for issuance and operations. Configure providers using the [Milestone 5 guide](docs/milestone-5.md).
 No real provider transactions are exercised by the automated suite.
 
-For existing Milestone 5 databases, `uv run alembic upgrade head` adds migrations `0007` and `0008`.
+For existing Milestone 5 databases, `uv run alembic upgrade head` adds migrations `0007` through `0009`.
 See the [Milestone 6 guide](docs/milestone-6.md) for scanner configuration, recipient
 access and the scheduled notification worker. Issuance remains disabled by default.
 
-For existing Milestone 6 databases, `uv run alembic upgrade head` adds migration `0008`.
+For existing Milestone 6 databases, `uv run alembic upgrade head` adds migrations `0008` and `0009`.
 See the [Milestone 7 guide](docs/milestone-7.md) for manager queues, worker health,
 planning targets and `uv run python -m app.readiness --live`. `/health/ready` checks
 database connectivity and migration status without exposing deployment details.
+
+For an existing Milestone 7 database, `uv run alembic upgrade head` adds migration
+`0009`. Existing approvals are preserved. See the [Milestone 8 guide](docs/milestone-8.md)
+for controlled onboarding, private pilot evaluations and independent expansion decisions.
 
 ## Try registration and verification
 
@@ -323,6 +328,8 @@ delivery, email access codes, and manager revocation. See the [Milestone 6 guide
 for migration `0007`, scanner/mail configuration and the notification worker.
 Milestone 7 adds manager operations queues, follow-up notes, planning targets and
 worker/deployment diagnostics. See the [Milestone 7 guide](docs/milestone-7.md).
+Milestone 8 adds institution onboarding and reviewed pilot evidence before expansion.
+See the [Milestone 8 guide](docs/milestone-8.md); demo results cannot qualify as live acceptance.
 Real institution and provider acceptance remains required; submission or a browser redirect
 is never proof of payment or official document issuance.
 The basic workspace can evolve into the planned Next.js frontend. MFA, SIS integrations,
