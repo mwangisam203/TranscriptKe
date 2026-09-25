@@ -193,3 +193,7 @@ Next: real institution pilot acceptance, operational ownership and monitoring,
 backup/restore exercises, institution-specific SLA calendars, production provider
 acceptance, and independently scoped MFA/SIS/credential-verification work. No real
 provider acceptance or production deployment is claimed by this milestone.
+
+Milestone 8 now provides [pilot evaluation and controlled onboarding](milestone-8.md).
+It records evidence and independent expansion decisions without claiming real pilot
+acceptance or enabling additional payment merchants.
