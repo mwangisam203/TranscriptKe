@@ -37,9 +37,12 @@ from app.models.payments import (
     PaymentRefund,
     PaymentWebhook,
 )
+from app.models.pilot import InstitutionOnboarding, PilotEvaluation
 from app.models.user import User, UserRole
 
 __all__ = [
+    "InstitutionOnboarding",
+    "PilotEvaluation",
     "OperationsCase",
     "WorkerRun",
     "DocumentDelivery",
