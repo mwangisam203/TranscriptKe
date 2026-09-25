@@ -20,6 +20,7 @@ function bindForm(id, fn) {
   });
 }
 function signOutView() {
+  window.pilotWorkspace?.reset();
   window.ordersWorkspace?.reset();
   window.operationsWorkspace?.reset();
   sessionGeneration++; accessToken = ""; currentUser = null; staffContext = null;
@@ -42,7 +43,7 @@ async function api(path, method = "GET", body, extraHeaders = {}) {
   if (!response.ok) {
     let detail = data?.detail;
     if (Array.isArray(detail)) detail = detail.map((item) => `${item.loc.slice(1).join(" ")}: ${item.msg}`).join("\n");
-    else if (detail && typeof detail === "object") detail = `${detail.message}: ${(detail.fields || []).map((key) => fields[key] || key).join(", ")}`;
+    else if (detail && typeof detail === "object") detail = `${detail.message}: ${(detail.blockers || detail.fields || []).map((key) => fields[key] || key).join(", ")}`;
     throw new Error(detail || "The request could not be completed.");
   }
   return data;
@@ -199,6 +200,7 @@ function renderHistory(container, events, staff) {
 async function loadStaff() {
   const generation = ++staffLoad, id = Number($("staff-institution").value);
   staffContext = null; reviewingLink = null; editingService = null;
+  window.pilotWorkspace?.reset("staff");
   window.operationsWorkspace?.reset();
   $("review-area").hidden = true; $("manager-tools").hidden = true; $("match-list").replaceChildren();
   if (!id) return;
@@ -213,6 +215,7 @@ async function loadStaff() {
   if (generation !== staffLoad || staffContext !== context) return;
   await window.ordersWorkspace?.loadStaff(context);
   if (generation === staffLoad && staffContext === context) await window.operationsWorkspace?.load(context);
+  if (generation === staffLoad && staffContext === context) await window.pilotWorkspace?.loadStaff(context);
 }
 $("staff-institution").addEventListener("change", () => run(loadStaff));
 function requireContext() { if (!staffContext) throw new Error("Select an institution and wait for it to load."); return staffContext; }
@@ -302,11 +305,13 @@ bindForm("service-form", async (form) => {
 });
 bindForm("staff-invite-form", async (form) => { await api(`/staff/institutions/${requireContext().id}/invitations`, "POST", {...formObject(form), role: "staff"}); form.reset(); notice("Staff invitation sent."); });
 function showApproval() {
+  window.pilotWorkspace?.reset("admin");
   const institution = adminInstitutions.find((item) => item.id === Number($("admin-institution").value));
   $("approval-form").hidden = !institution; $("admin-invite-form").hidden = !institution;
   if (!institution) return;
   $("approval-status").textContent = `${institution.is_approved ? "Approved" : "Awaiting approval"} · ${institution.is_active ? "Active" : "Inactive"}`;
   $("approval-form").reset(); $("approval-form").elements.approved.checked = institution.is_approved;
+  run(() => window.pilotWorkspace?.loadAdmin(institution.id));
 }
 $("admin-institution").addEventListener("change", showApproval);
 bindForm("approval-form", async (form) => {
