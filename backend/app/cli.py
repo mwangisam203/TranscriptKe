@@ -2,6 +2,7 @@
 
 import argparse
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.models.access import AccessEvent
 from app.models.institution import Institution
 from app.models.user import User, UserRole
 from app.schemas.auth import EmailRequest
+from app.services.mail import Mailer
 
 DEVELOPMENT_INSTITUTIONS = (
     ("DEMO-UNI", "Demo Kenya University (development only)"),
@@ -115,7 +117,30 @@ def main() -> None:
         "bootstrap-admin", help="Grant a verified account platform-admin access"
     )
     admin.add_argument("--email", required=True)
+    test_mail = commands.add_parser(
+        "test-email",
+        help="Submit a test email using configured SMTP (no database writes)",
+    )
+    test_mail.add_argument("--email", required=True)
     args = parser.parse_args()
+    if args.command == "test-email":
+        if settings.MAIL_BACKEND != "smtp":
+            parser.error(
+                "Set MAIL_BACKEND=smtp and configure your provider in backend/.env first. File mode does not send to inboxes."
+            )
+        try:
+            email = EmailRequest(email=args.email).email
+            Mailer().send_test(email)
+        except (ValueError, HTTPException) as exc:
+            parser.error(
+                exc.detail
+                if isinstance(exc, HTTPException)
+                else "Enter a valid recipient email address"
+            )
+        print(
+            "Test email accepted by SMTP. Check your inbox and spam folder; inbox delivery is not guaranteed by SMTP acceptance."
+        )
+        return
     with SessionLocal() as db:
         try:
             if args.command == "seed-institutions":
