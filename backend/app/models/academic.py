@@ -105,6 +105,16 @@ class AcademicRecordLink(Base):
             "admission_number",
             name="uq_link_user_institution_admission",
         ),
+        UniqueConstraint(
+            "user_id",
+            "institution_id",
+            "identity_fingerprint",
+            name="uq_link_user_institution_identity",
+        ),
+        CheckConstraint(
+            "admission_number IS NOT NULL OR identity_ciphertext IS NOT NULL",
+            name="ck_link_identifier",
+        ),
         CheckConstraint(
             "status IN ('pending', 'needs_information', 'matched', 'rejected')",
             name="ck_link_status",
@@ -130,7 +140,10 @@ class AcademicRecordLink(Base):
         ForeignKey("institutions.id"), index=True
     )
     service_id: Mapped[int] = mapped_column(ForeignKey("institution_services.id"))
-    admission_number: Mapped[str] = mapped_column(String(100))
+    admission_number: Mapped[str | None] = mapped_column(String(100))
+    identity_ciphertext: Mapped[str | None] = mapped_column(Text)
+    identity_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    identity_masked: Mapped[str | None] = mapped_column(String(10))
     name_on_record: Mapped[str] = mapped_column(String(255))
     program: Mapped[str | None] = mapped_column(String(255))
     attendance_start_year: Mapped[int | None] = mapped_column(Integer)
