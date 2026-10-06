@@ -94,6 +94,7 @@ def submission_snapshot(link: AcademicRecordLink) -> dict:
     return {
         **{field: getattr(link, field) for field in SUBMISSION_FIELDS},
         "requirements": link.requirements_snapshot,
+        "identity_masked": link.identity_masked,
     }
 
 
