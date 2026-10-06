@@ -96,7 +96,15 @@ class ApprovalWrite(StrictInput):
 
 class RecordSubmission(StrictInput):
     service_id: Id
-    admission_number: RecordIdentifier
+    admission_number: RecordIdentifier | None = None
+    id_number: (
+        Annotated[
+            str,
+            BeforeValidator(clean_code),
+            Field(min_length=4, max_length=32, pattern=r"^[A-Z0-9-]+$"),
+        ]
+        | None
+    ) = None
     name_on_record: ShortText
     program: ShortText | None = None
     attendance_start_year: int | None = Field(default=None, ge=1900)
@@ -105,6 +113,10 @@ class RecordSubmission(StrictInput):
 
     @model_validator(mode="after")
     def validate_attendance(self):
+        if not self.admission_number and not self.id_number:
+            raise ValueError(
+                "Provide an admission number or a National ID/passport number for institutional review"
+            )
         current_year = datetime.now(timezone.utc).year
         if any(
             year is not None and year > current_year
@@ -166,7 +178,8 @@ class RecordRead(BaseModel):
     id: int
     institution_id: int
     service_id: int
-    admission_number: str
+    admission_number: str | None
+    identity_masked: str | None
     name_on_record: str
     program: str | None
     attendance_start_year: int | None
@@ -183,6 +196,10 @@ class RecordRead(BaseModel):
 class StaffRecordRead(RecordRead):
     user_id: int
     record_reference: str | None
+
+
+class IdentityRead(BaseModel):
+    id_number: str
 
 
 class RecordEventRead(BaseModel):
