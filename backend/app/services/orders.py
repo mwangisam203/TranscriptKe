@@ -291,6 +291,11 @@ def build_snapshot(db, order):
             "version": link.version,
             "name_on_record": link.name_on_record,
             "admission_number": link.admission_number,
+            **(
+                {"identity_masked": link.identity_masked}
+                if link.identity_masked
+                else {}
+            ),
             "program": link.program,
         },
         "policy_version": policy.version,
