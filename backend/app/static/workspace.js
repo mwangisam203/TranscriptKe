@@ -20,6 +20,7 @@ function bindForm(id, fn) {
   });
 }
 function signOutView() {
+  window.workspaceInterface?.reset();
   window.pilotWorkspace?.reset();
   window.ordersWorkspace?.reset();
   window.operationsWorkspace?.reset();
@@ -71,8 +72,9 @@ function fillForm(form, data) {
   }
 }
 function showView(id) {
-  for (const view of ["student-view", "orders-view", "staff-view", "admin-view"]) $(view).hidden = view !== id;
-  document.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === id)));
+  for (const view of ["student-view", "orders-view", "account-view", "staff-view", "admin-view"]) $(view).hidden = view !== id;
+  window.workspaceInterface?.view(id);
+  document.querySelectorAll("nav [data-view]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === id)));
 }
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 
@@ -80,7 +82,8 @@ async function loadSession() {
   currentUser = await api("/auth/me");
   memberships = await api("/staff/memberships");
   publicInstitutions = await api("/institutions");
-  $("welcome").textContent = `Welcome, ${currentUser.full_name}`;
+  $("welcome").textContent = `Welcome back, ${currentUser.full_name.trim().split(/\s+/)[0]}.`;
+  window.workspaceInterface?.profile();
   $("staff-tab").hidden = memberships.length === 0;
   $("admin-tab").hidden = currentUser.role !== "admin";
   options($("student-institution"), publicInstitutions, (item) => item.name, "Choose an institution");
@@ -95,16 +98,40 @@ async function loadSession() {
     showApproval();
   }
   $("authentication").hidden = true; $("workspace").hidden = false; $("logout").hidden = false;
+  window.workspaceInterface?.public(false);
   clearRevision(); showView("student-view"); await loadLinks();
   if (memberships.length) await loadStaff();
   await window.ordersWorkspace?.load();
+  window.workspaceInterface?.entered();
 }
 bindForm("login-form", async (form) => { const data = await api("/auth/login", "POST", formObject(form)); accessToken = data.access_token; form.reset(); await loadSession(); notice("Signed in."); });
-bindForm("register-form", async (form) => { await api("/auth/register", "POST", formObject(form)); form.reset(); notice("Account created. Check your email for a verification code before signing in."); });
-bindForm("verify-form", async (form) => { const data = await api("/auth/email-verifications/confirm", "POST", formObject(form)); form.reset(); notice(data.message); });
+bindForm("register-form", async (form) => {
+  const email = form.elements.email.value;
+  await api("/auth/register", "POST", formObject(form)); form.reset();
+  $("login-form").elements.email.value = email; $("resend-form").elements.email.value = email;
+  window.workspaceInterface?.auth("verify");
+  notice(document.querySelector(".development-mail-hint") ? "Account created. Local email mode: your verification code is in backend/.mailbox/ (or your configured mail directory), not your inbox." : "Account created. Check your email and spam folder for the single-use verification code before signing in.");
+});
+bindForm("verify-form", async (form) => { const data = await api("/auth/email-verifications/confirm", "POST", formObject(form)); form.reset(); window.workspaceInterface?.auth("login"); notice(data.message); });
 bindForm("resend-form", async (form) => notice((await api("/auth/email-verifications", "POST", formObject(form))).message));
-bindForm("reset-request-form", async (form) => notice((await api("/auth/password-reset-requests", "POST", formObject(form))).message));
-bindForm("reset-form", async (form) => { const data = await api("/auth/password-resets", "POST", formObject(form)); form.reset(); notice(data.message); });
+bindForm("reset-request-form", async (form) => {notice((await api("/auth/password-reset-requests", "POST", formObject(form))).message); $("reset-code-details").open = true; $("reset-form").elements.token.focus();});
+bindForm("reset-form", async (form) => { const data = await api("/auth/password-resets", "POST", formObject(form)); form.reset(); window.workspaceInterface?.auth("login"); notice(data.message); });
+bindForm("change-password-form", async (form) => {
+  const values = formObject(form);
+  if (values.password !== values.confirm_password) throw new Error("The new passwords do not match.");
+  const data = await api("/auth/password", "PUT", {current_password: values.current_password, password: values.password});
+  const email = currentUser.email;
+  signOutView(); $("login-form").elements.email.value = email;
+  notice(data.message); $("authentication").scrollIntoView({block: "start"});
+});
+$("account-password-recovery").addEventListener("click", () => run(async () => {
+  const email = currentUser.email;
+  await api("/auth/logout", "POST"); signOutView();
+  window.workspaceInterface?.auth("recover");
+  $("reset-request-form").elements.email.value = email;
+  $("authentication").scrollIntoView({block: "start"});
+  notice("Enter your email to request a password reset code.");
+}));
 $("logout").addEventListener("click", () => run(async () => { await api("/auth/logout", "POST"); signOutView(); notice("Signed out."); }));
 bindForm("accept-invitation-form", async (form) => { await api("/staff/invitations/accept", "POST", formObject(form)); form.reset(); await loadSession(); notice("Invitation accepted. Your institution workspace is ready."); });
 
@@ -134,9 +161,19 @@ function updateRequirements() {
 }
 $("student-institution").addEventListener("change", () => run(loadStudentCatalog));
 $("student-service").addEventListener("change", updateRequirements);
+function updateLookupMethod() {
+  const identity = $("record-lookup-method").value === "identity";
+  $("admission-lookup-field").hidden = identity; $("identity-lookup-field").hidden = !identity;
+  const form = $("record-form");
+  form.elements.admission_number.disabled = identity; form.elements.admission_number.required = !identity;
+  form.elements.id_number.disabled = !identity; form.elements.id_number.required = identity;
+  if (identity) form.elements.admission_number.value = ""; else form.elements.id_number.value = "";
+}
+$("record-lookup-method").addEventListener("change", updateLookupMethod);
 function clearRevision() {
   revisingLink = null; $("record-form").reset(); $("student-institution").disabled = false;
   $("record-form-title").textContent = "Link an academic record"; $("record-submit").textContent = "Submit for matching";
+  updateLookupMethod();
   $("cancel-resubmit").hidden = true; studentServices = []; studentPolicy = null;
   $("student-service").replaceChildren(); $("service-summary").textContent = ""; $("ordering-instructions").textContent = "";
   $("record-submit").disabled = true;
@@ -144,7 +181,7 @@ function clearRevision() {
 $("cancel-resubmit").addEventListener("click", clearRevision);
 bindForm("record-form", async (form) => {
   const values = formObject(form);
-  const payload = {service_id: Number(values.service_id), admission_number: values.admission_number,
+  const payload = {service_id: Number(values.service_id), admission_number: values.admission_number?.trim() || null, id_number: values.id_number?.trim() || null,
     name_on_record: values.name_on_record, program: values.program.trim() || null,
     attendance_start_year: values.attendance_start_year ? Number(values.attendance_start_year) : null,
     attendance_end_year: values.attendance_end_year ? Number(values.attendance_end_year) : null,
@@ -155,7 +192,7 @@ bindForm("record-form", async (form) => {
 });
 function recordCard(link) {
   const card = node("article", undefined, "card");
-  card.append(node("strong", `${link.name_on_record} · ${link.admission_number}`), node("p", `${link.program || "Program not specified"} · ${link.requirements_snapshot.service_name}`), node("span", link.status.replaceAll("_", " "), `badge ${link.status}`));
+  card.append(node("strong", `${link.name_on_record} · ${link.admission_number || `ID ${link.identity_masked || "provided"}`}`), node("p", `${link.program || "Program not specified"} · ${link.requirements_snapshot.service_name}`), node("span", link.status.replaceAll("_", " "), `badge ${link.status}`));
   if (link.student_message) card.append(node("p", link.student_message));
   return card;
 }
@@ -172,14 +209,16 @@ async function loadLinks(append = false) {
       $("student-institution").value = revisingLink.institution_id; $("student-institution").disabled = true;
       await loadStudentCatalog();
       fillForm($("record-form"), {...revisingLink, previous_names: revisingLink.previous_names.join("\n")});
+      $("record-lookup-method").value = revisingLink.admission_number ? "admission" : "identity"; updateLookupMethod();
       updateRequirements(); $("record-form-title").textContent = "Update your matching details";
       $("record-submit").textContent = "Resubmit for matching"; $("cancel-resubmit").hidden = false;
       $("record-form").scrollIntoView({behavior: "smooth", block: "start"});
     }));
     $("my-links").append(card);
   }
-  if (!links.length && !append) $("my-links").append(node("p", "You have no academic record links yet.", "muted"));
+  if (!links.length && !append) $("my-links").append(window.workspaceInterface.empty("Your story starts here", "You have no academic record links yet. Link a record using the form, and your institution will review it."));
   linksOffset += links.length; $("more-links").hidden = links.length < 50;
+  if (!append) await window.workspaceInterface?.overview();
 }
 $("refresh-links").addEventListener("click", () => run(() => loadLinks()));
 $("more-links").addEventListener("click", () => run(() => loadLinks(true)));
@@ -190,7 +229,7 @@ function renderHistory(container, events, staff) {
     item.append(node("strong", `${event.status.replaceAll("_", " ")} · ${new Date(event.created_at).toLocaleString()}`));
     if (event.student_message) item.append(node("p", event.student_message));
     const snapshot = event.submission_snapshot;
-    item.append(node("p", `${snapshot.name_on_record} · ${snapshot.admission_number} · ${snapshot.program || "No program supplied"}`, "muted"));
+    item.append(node("p", `${snapshot.name_on_record} · ${snapshot.admission_number || `ID ${snapshot.identity_masked || "provided"}`} · ${snapshot.program || "No program supplied"}`, "muted"));
     if (staff && event.internal_note) item.append(node("p", `Private evidence: ${event.internal_note}`));
     if (staff && event.record_reference) item.append(node("p", `Institutional reference: ${event.record_reference}`));
     container.append(item);
@@ -229,7 +268,7 @@ async function loadMatches(append = false) {
     card.append(action("Open review", () => openReview(context, link.id)));
     $("match-list").append(card);
   }
-  if (!links.length && !append) $("match-list").append(node("p", "No matching requests in this view.", "muted"));
+  if (!links.length && !append) $("match-list").append(window.workspaceInterface.empty("You’re all caught up", "No matching requests in this view. Choose another status or refresh to check for new requests.", "check"));
   matchesOffset += links.length; $("more-matches").hidden = links.length < 50;
 }
 $("match-filter").addEventListener("change", () => run(() => loadMatches()));
@@ -242,6 +281,16 @@ async function openReview(context, id) {
   reviewingLink = link; $("review-area").hidden = false;
   $("review-title").textContent = `Review ${link.name_on_record}`;
   $("review-details").replaceChildren(recordCard(link), node("p", `Attendance: ${link.attendance_start_year || "Not supplied"}–${link.attendance_end_year || "Not supplied"}. Previous names: ${link.previous_names.join(", ") || "None supplied"}.`));
+  if (link.identity_masked) {
+    const identity = node("p", `ID/passport: ${link.identity_masked}`);
+    const reveal = action("View ID for institutional matching", async () => {
+      const context = staffContext, selected = reviewingLink;
+      const data = await api(`/staff/institutions/${link.institution_id}/record-matches/${link.id}/identity`);
+      if (staffContext !== context || reviewingLink !== selected) return;
+      identity.textContent = `ID/passport: ${data.id_number}`; reveal.remove();
+    });
+    $("review-details").append(identity, reveal);
+  }
   renderHistory($("review-history"), events, true);
   const canReview = link.user_id !== currentUser.id && (link.status === "pending" || (context.manager && ["matched", "rejected"].includes(link.status)));
   $("decision-form").hidden = !canReview; $("decision-form").reset();
