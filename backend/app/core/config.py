@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "test", "production"] = "development"
     DATABASE_URL: str
     SECRET_KEY: str
+    IDENTITY_ENCRYPTION_KEY: str | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60, ge=1)
     EMAIL_VERIFICATION_EXPIRE_MINUTES: int = Field(default=60, ge=1)
     PASSWORD_RESET_EXPIRE_MINUTES: int = Field(default=30, ge=1)
