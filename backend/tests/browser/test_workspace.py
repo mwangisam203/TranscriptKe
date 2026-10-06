@@ -157,7 +157,7 @@ def test_order_submission_questions_and_cancellation(
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     login(page, live_url, w["user"].email)
-    page.locator("[data-view=orders-view]").click()
+    page.locator("nav [data-view=orders-view]").click()
     page.get_by_role("button", name="Open order", exact=True).click()
     page.locator("#order-editor").wait_for(state="visible")
     page.locator("#order-editor [name=purpose]").fill("Admission to graduate school")
@@ -197,7 +197,7 @@ def test_order_submission_questions_and_cancellation(
     page.locator("#logout").click()
     page.locator("#authentication").wait_for(state="visible")
     login(page, live_url, w["user"].email)
-    page.locator("[data-view=orders-view]").click()
+    page.locator("nav [data-view=orders-view]").click()
     assert "1 question(s)" in page.locator("#order-list").inner_text()
     page.get_by_role("button", name="Open order", exact=True).click()
     page.locator("#order-message-form").wait_for(state="visible")
@@ -300,7 +300,7 @@ def test_registrar_review_holds_and_student_progress(
     page.locator("#logout").click()
     page.locator("#authentication").wait_for(state="visible")
     login(page, live_url, workflow["user"].email)
-    page.locator("[data-view=orders-view]").click()
+    page.locator("nav [data-view=orders-view]").click()
     page.get_by_role("button", name="Open order", exact=True).click()
     page.locator("#student-fulfillment").get_by_text(
         "Official transcript: ready", exact=True
@@ -324,7 +324,7 @@ def test_payment_receipt_and_manager_refund(
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     login(page, live_url, payable["user"].email)
-    page.locator("[data-view=orders-view]").click()
+    page.locator("nav [data-view=orders-view]").click()
     page.get_by_role("button", name="Open order", exact=True).click()
     page.get_by_role("button", name="Start payment", exact=True).click()
     page.get_by_role("link", name="Open secure card checkout", exact=True).wait_for()
