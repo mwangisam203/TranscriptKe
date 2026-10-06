@@ -73,7 +73,7 @@ function O_draftBody() {
 async function O_load() {
   const records = []; let page;
   do { page = await api(`/me/academic-record-links?offset=${records.length}&limit=100`); records.push(...page); } while (page.length === 100);
-  options($("order-record"), records.filter((record) => record.status === "matched"), (record) => `${record.name_on_record} · ${record.admission_number}`, "Choose a confirmed academic record");
+  options($("order-record"), records.filter((record) => record.status === "matched"), (record) => `${record.name_on_record} · ${record.admission_number || `ID ${record.identity_masked || "provided"}`}`, "Choose a confirmed academic record");
   O_attachmentPolicy = await api("/orders/attachment-policy");
   $("order-file").accept = O_attachmentPolicy.extensions.join(",");
   $("attachment-help").textContent = `Up to five files, 2 MiB each. Available formats: ${O_attachmentPolicy.extensions.join(", ")}. Only attach information relevant to this order.`;
@@ -89,7 +89,7 @@ async function O_list(append = false) {
     if (order.submitted_snapshot) card.append(node("p", O_money(order.submitted_snapshot.total_minor)));
     card.append(action("Open order", () => O_open(order.id))); $("order-list").append(card);
   }
-  if (!append && !orders.length) $("order-list").append(node("p", "No orders yet. Start with a confirmed academic record."));
+  if (!append && !orders.length) $("order-list").append(window.workspaceInterface.empty("Your next opportunity is waiting", "No orders yet. Start with a confirmed academic record, then choose your documents and recipients.", "orders"));
   O_offset += orders.length; $("more-orders").hidden = orders.length < 30;
 }
 $("refresh-orders").addEventListener("click", () => run(O_load));
@@ -102,7 +102,7 @@ bindForm("new-order-form", async () => {
 });
 function O_summary(container, snapshot, paymentStatus = "not_started") {
   container.replaceChildren(); if (!snapshot) return;
-  container.append(node("h3", "Order details"), node("p", `${snapshot.institution.name} · ${snapshot.academic_record.name_on_record} · ${snapshot.academic_record.admission_number}`), node("p", `Purpose: ${snapshot.purpose}`), node("p", `Release: ${snapshot.release_when.replaceAll("_", " ")} ${snapshot.release_instruction}`));
+  container.append(node("h3", "Order details"), node("p", `${snapshot.institution.name} · ${snapshot.academic_record.name_on_record} · ${snapshot.academic_record.admission_number || `ID ${snapshot.academic_record.identity_masked || "provided"}`}`), node("p", `Purpose: ${snapshot.purpose}`), node("p", `Release: ${snapshot.release_when.replaceAll("_", " ")} ${snapshot.release_instruction}`));
   for (const recipient of snapshot.recipients) {
     const card = node("div", undefined, "card");
     card.append(node("strong", recipient.name), node("p", [recipient.organization, recipient.email, recipient.delivery_method.replaceAll("_", " "), recipient.application_reference].filter(Boolean).join(" · ")));
