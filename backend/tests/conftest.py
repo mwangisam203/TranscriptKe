@@ -1,3 +1,4 @@
+import base64
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -7,6 +8,7 @@ os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SECRET_KEY"] = "isolated-test-secret-key-at-least-32-characters"
 os.environ["MAIL_BACKEND"] = "file"
+os.environ["IDENTITY_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(b"B" * 32).decode()
 
 import pytest
 from alembic.config import Config
