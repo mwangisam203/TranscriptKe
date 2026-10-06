@@ -19,7 +19,7 @@ def test_fresh_database_matches_models_and_can_roundtrip(engine):
     with engine.begin() as connection:
         config = migration_config(connection)
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
         )
         command.check(config)
         command.downgrade(config, "base")
@@ -181,3 +181,25 @@ def test_workspace_served_with_local_assets_and_security_headers(client):
     assert "Academic records" in response.text
     assert client.get("/workspace/assets/workspace.js").status_code == 200
     assert client.get("/workspace/assets/workspace.css").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "environment,mail_backend,visible",
+    [
+        ("development", "file", True),
+        ("development", "smtp", False),
+        ("production", "smtp", False),
+        ("test", "file", False),
+    ],
+)
+def test_local_mail_help_only_shown_for_development_file_delivery(
+    client, monkeypatch, environment, mail_backend, visible
+):
+    monkeypatch.setattr(settings, "APP_ENV", environment)
+    monkeypatch.setattr(settings, "MAIL_BACKEND", mail_backend)
+    response = client.get("/workspace")
+    assert response.status_code == 200
+    assert ("<strong>Local development email</strong>" in response.text) is visible
+    assert settings.SECRET_KEY not in response.text
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "script-src 'self'" in response.headers["Content-Security-Policy"]
