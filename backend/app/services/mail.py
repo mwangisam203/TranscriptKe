@@ -15,11 +15,21 @@ class Mailer:
         message["From"] = settings.MAIL_FROM
         message["To"] = email
         message["Subject"] = f"TranscriptsKE: {purpose.replace('_', ' ')}"
-        # The UI will consume these codes when its verification screens are built.
         message.set_content(
             f"Your TranscriptsKE {purpose.replace('_', ' ')} code is:\n\n"
             f"{token}\n\nIt expires in {minutes} minutes and can be used once.\n"
             "If you did not expect this message, you can ignore it.\n"
+        )
+        self._deliver(message)
+
+    def send_test(self, email: str) -> None:
+        message = EmailMessage()
+        message["From"] = settings.MAIL_FROM
+        message["To"] = email
+        message["Subject"] = "TranscriptsKE: email delivery test"
+        message.set_content(
+            "Your TranscriptsKE SMTP settings submitted this test email successfully.\n"
+            "This is not a verification code. Register or resend your code in the workspace.\n"
         )
         self._deliver(message)
 
