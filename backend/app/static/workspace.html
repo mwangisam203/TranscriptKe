@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>TranscriptsKE · Academic records</title>
-  <link rel="stylesheet" href="/workspace/assets/workspace.css">
+  <script src="/workspace/assets/theme.js"></script><link rel="stylesheet" href="/workspace/assets/workspace.css">
   <script src="/workspace/assets/workspace.js" defer></script>
   <script src="/workspace/assets/orders.js" defer></script>
   <script src="/workspace/assets/fulfillment.js" defer></script>
@@ -12,39 +12,157 @@
   <script src="/workspace/assets/issuance.js" defer></script>
   <script src="/workspace/assets/operations.js" defer></script>
   <script src="/workspace/assets/pilot.js" defer></script>
+  <script src="/workspace/assets/interface.js" defer></script>
+  <script src="/workspace/assets/social.js" defer></script>
 </head>
 <body>
-<header><a class="brand" href="/workspace">Transcripts<span>KE</span></a><span>Academic records, with confidence.</span><button id="logout" hidden>Sign out</button></header>
+<svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-record" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></symbol>
+<symbol id="i-orders" viewBox="0 0 24 24"><path d="M8 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/><rect x="8" y="2" width="8" height="5" rx="2"/><path d="m8 14 3 3 5-6"/></symbol>
+<symbol id="i-building" viewBox="0 0 24 24"><path d="m2 8 10-5 10 5M3 9h18M5 9v10m7-10v10m7-10v10M2 21h20"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7Z"/><path d="m8 12 3 3 5-6"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01"/></symbol>
+</defs></svg>
+<header class="site-header"><a class="brand" href="/workspace" aria-label="TranscriptsKE home"><span class="brand-mark" aria-hidden="true">tk<span>.</span></span><span class="brand-name">Transcripts<span>KE</span></span></a><span class="header-caption">Your academic journey, connected.</span><nav id="public-navigation" class="public-navigation" aria-label="Website information"><a href="#about-workflow">How it works</a><a href="#about-documents">Documents</a><a href="#about-questions">Questions</a><a class="public-sign-in" href="#login-form" data-auth-view="login">Sign in <span aria-hidden="true">↗</span></a></nav><div class="header-actions"><label class="theme-picker">Theme<select id="theme-preference" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><span class="header-trust"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg> Institution-led records</span><button id="logout" class="secondary" hidden>Sign out</button></div></header>
 <main>
   <div id="notice" role="status" aria-live="polite"></div>
-  <section id="authentication" class="grid">
-    <div class="intro"><p class="eyebrow">YOUR ACADEMIC JOURNEY</p><h1>Connect with your institution.</h1><p>Explore available documents and have your institution confirm your academic record.</p><p class="muted">Match your academic records and submit document requests. Payments and document delivery will follow.</p></div>
-    <div class="panel"><h2>Welcome</h2>
-      <form id="login-form"><h3>Sign in</h3><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button>Sign in</button></form>
-      <details><summary>Create a student account</summary><form id="register-form"><label>Full name<input name="full_name" autocomplete="name" required maxlength="255"></label><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label><button>Create account</button></form></details>
-      <details><summary>Verify your email</summary><form id="verify-form"><label>Verification code<input name="token" required autocomplete="one-time-code"></label><button>Verify email</button></form><form id="resend-form"><label>Email<input name="email" type="email" autocomplete="email" required></label><button class="secondary">Send another code</button></form></details>
-      <details><summary>Reset your password</summary><form id="reset-request-form"><label>Email<input name="email" type="email" required></label><button class="secondary">Send reset code</button></form><form id="reset-form"><label>Reset code<input name="token" required autocomplete="one-time-code"></label><label>New password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label><button>Reset password</button></form></details>
+  <section id="authentication" class="auth-layout">
+    <div class="auth-story">
+      <p class="eyebrow"><span class="eyebrow-dot"></span> YOUR NEXT CHAPTER STARTS HERE</p>
+      <h1>Your records.<br>Your <em>next chapter.</em></h1>
+      <p class="hero-description">From your institution to your next opportunity. Request academic documents and follow their progress, all in one place.</p>
+      <div class="journey-art" aria-label="Illustration of the academic document request process">
+        <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+        <div class="document-preview">
+          <div class="document-top"><span class="document-emblem"><svg class="icon" aria-hidden="true"><use href="#i-building"/></svg></span><span>YOUR INSTITUTION<br><small>ACADEMIC RECORDS OFFICE</small></span><svg class="icon document-seal" aria-hidden="true"><use href="#i-shield"/></svg></div>
+          <div class="document-label">DOCUMENT REQUEST</div><h2>Academic transcript</h2><p class="document-subtitle">A new opportunity begins with your story.</p>
+          <div class="document-lines" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+          <div class="document-bottom"><span>Prepared by your institution</span><span class="document-monogram" aria-hidden="true">tk.</span></div>
+        </div>
+        <div class="journey-chip chip-review"><span class="chip-icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span><span>Institution reviewed<small>Ownership checked before release</small></span></div>
+        <div class="journey-chip chip-destination"><span class="chip-icon"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></span><span>Ready for your next step<small>Delivered to your chosen recipient</small></span></div>
+        <span class="art-caption">An illustration of your document journey</span>
+      </div>
+      <div class="journey-steps"><div><span>01</span><strong>Link your record</strong><small>Your institution checks your details.</small></div><div><span>02</span><strong>Make your request</strong><small>Choose documents and recipients.</small></div><div><span>03</span><strong>Follow the journey</strong><small>Track review, payment and delivery.</small></div></div>
+    </div>
+    <div class="auth-card panel">
+      <div class="auth-card-heading"><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg></span><p class="eyebrow">YOUR ACADEMIC WORKSPACE</p></div>
+      <div id="auth-tabs" class="auth-tabs" role="tablist" aria-label="Account access"><button type="button" id="auth-login-tab" role="tab" aria-controls="auth-login" aria-selected="true" data-auth-view="login">Sign in</button><button type="button" id="auth-register-tab" role="tab" aria-controls="auth-register" aria-selected="false" tabindex="-1" data-auth-view="register">Create account</button></div>
+      <section id="auth-login" class="auth-pane" role="tabpanel" aria-labelledby="auth-login-tab">
+        <h2>Welcome back.</h2><p class="muted">Sign in to continue your academic journey.</p>
+        <form id="login-form"><label>Email address<input name="email" type="email" autocomplete="username" placeholder="you@example.com" required></label><label>Password<input name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required></label><button class="full-button">Sign in</button></form>
+        <div class="auth-links"><button type="button" class="text-button" data-auth-view="recover">Forgot password?</button><button type="button" class="text-button" data-auth-view="verify">Verify your email</button></div>
+      </section>
+      <section id="auth-register" class="auth-pane" role="tabpanel" aria-labelledby="auth-register-tab" hidden>
+        <h2>Start your next chapter.</h2><p class="muted">Create a student account. We’ll ask you to verify your email before signing in.</p>
+        <form id="register-form"><label>Full name<input name="full_name" autocomplete="name" placeholder="Your full name" required maxlength="255"></label><label>Email address<input name="email" type="email" autocomplete="email" placeholder="you@example.com" required></label><label>Password<input name="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required minlength="8" maxlength="72"></label><button class="full-button">Create account</button></form><p class="auth-footnote">Your institution will confirm ownership of your academic record separately.</p>
+      </section>
+      <section id="auth-verify" class="auth-pane" hidden>
+        <h2>Verify your email.</h2><p class="muted">Enter the verification code for your account. Once verified, you can sign in.</p>
+        <form id="verify-form"><label>Verification code<input name="token" required autocomplete="one-time-code" placeholder="Paste your verification code" spellcheck="false"></label><button class="full-button">Verify email</button></form>
+        <details><summary>Need another code?</summary><form id="resend-form"><label>Email address<input name="email" type="email" autocomplete="email" placeholder="you@example.com" required></label><button class="secondary full-button">Send another code</button></form></details><button type="button" class="text-button auth-back" data-auth-view="login">Back to sign in</button>
+      </section>
+      <section id="auth-recover" class="auth-pane" hidden>
+        <h2>Let’s get you back in.</h2><p class="muted">Request a reset code, then choose a new password.</p>
+        <form id="reset-request-form"><label>Email address<input name="email" type="email" autocomplete="email" placeholder="you@example.com" required></label><button class="secondary full-button">Send reset code</button></form>
+        <details id="reset-code-details"><summary>I have a reset code</summary><form id="reset-form"><label>Reset code<input name="token" required autocomplete="one-time-code" spellcheck="false"></label><label>New password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label><button class="full-button">Reset password</button></form></details><button type="button" class="text-button auth-back" data-auth-view="login">Back to sign in</button>
+      </section>
+      <!-- development-mail-hint -->
+      <div class="auth-assurance"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span>Verified accounts. Institution-led review.<br><small>Your records stay in the right hands.</small></span></div>
     </div>
   </section>
+  <div id="public-information" class="public-information">
+    <section id="about-workflow" class="public-section" aria-labelledby="workflow-heading">
+      <div class="public-section-heading"><div><p class="eyebrow">LESS GUESSWORK. MORE POSSIBILITY.</p><h2 id="workflow-heading">A clearer path from<br>your records to your future.</h2></div><p>TranscriptsKE brings students and institutions into one shared document request process. Know what to provide, what comes next, and where your request stands.</p></div>
+      <div class="public-process">
+        <article><span class="process-number">01</span><h3>Connect your record</h3><p>Choose your institution and provide the details it needs to locate your academic record. Institutional staff review and confirm ownership.</p><span class="process-detail"><svg class="icon" aria-hidden="true"><use href="#i-building"/></svg> Reviewed by your institution</span></article>
+        <article><span class="process-number">02</span><h3>Request with confidence</h3><p>Select your documents and recipients, review the quoted fees, and give your release consent. Payment is collected after registrar approval when enabled.</p><span class="process-detail"><svg class="icon" aria-hidden="true"><use href="#i-orders"/></svg> Review your quote before submitting</span></article>
+        <article><span class="process-number">03</span><h3>Follow every step</h3><p>Track progress, respond to questions, and follow delivery. With secure electronic delivery enabled, recipients verify their email before downloading.</p><span class="process-detail"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Stay connected to your request</span></article>
+      </div>
+    </section>
+    <section id="about-documents" class="public-section" aria-labelledby="documents-heading">
+      <div class="public-section-heading"><div><p class="eyebrow">DOCUMENTS FOR YOUR NEXT STEP</p><h2 id="documents-heading">Different goals.<br>The records to support them.</h2></div><p>Apply for a program, share your qualifications, or confirm your enrollment. Your institution determines which services it offers, their fees, and processing times.</p></div>
+      <div class="public-documents">
+        <article><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg></span><h3>Academic transcripts</h3><p>Request official transcripts or student copies offered by your institution.</p></article>
+        <article><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span><h3>Degree certificates</h3><p>Request certificate services made available by the issuing institution.</p></article>
+        <article><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-building"/></svg></span><h3>Enrollment letters</h3><p>Request institutional confirmation of your enrollment.</p></article>
+        <article><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span><h3>Completion letters</h3><p>Request confirmation of program completion when the service is available.</p></article>
+      </div>
+      <p class="public-availability">Service availability, payment methods, and delivery options depend on the institution and its configuration. Demo institutions are for development and are not participating real institutions.</p>
+    </section>
+    <section id="about-institutions" class="public-institutions" aria-labelledby="institutions-heading">
+      <div><p class="eyebrow">BUILT AROUND INSTITUTIONAL TRUST</p><h2 id="institutions-heading">Your institution stays<br>at the heart of your records.</h2><p>Students make the request. Authorized institutional staff match records, review documents and decide when they can be released.</p><a href="#about-questions">Learn more about the process <span aria-hidden="true">↗</span></a></div>
+      <div class="public-benefits"><article><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><div><h3>Ownership comes first</h3><p>A verified email is the first step. Your institution separately checks that the academic record belongs to you.</p></div></article><article><svg class="icon" aria-hidden="true"><use href="#i-orders"/></svg><div><h3>A shared place to follow up</h3><p>Staff can request more information, and students can respond within the order workflow.</p></div></article><article><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg><div><h3>Documents released with care</h3><p>Configured electronic delivery uses institution-prepared PDFs, release checks and recipient access codes.</p></div></article></div>
+    </section>
+    <section id="about-questions" class="public-section public-questions" aria-labelledby="questions-heading">
+      <div><p class="eyebrow">A FEW THINGS TO KNOW</p><h2 id="questions-heading">Your questions,<br>answered.</h2><p>Get familiar with the process before you create your account.</p></div>
+      <div class="public-faq">
+        <details><summary>Can I request documents without an account?</summary><p>You can read about the service here without signing in. To link a record or submit an order, create an account and verify your email. Document recipients use their delivery link and email access code.</p></details>
+        <details><summary>How much does a document request cost?</summary><p>Each institution sets its service fees. You review a quote before giving consent and submitting your order. When payment is enabled, collection follows registrar approval.</p></details>
+        <details><summary>How long will my request take?</summary><p>Your institution lists a processing range for each service. Staff questions, holds, payment waits and deferred release conditions can affect when documents are ready. Planning targets are not guaranteed delivery dates.</p></details>
+        <details><summary>What if my institution is not listed?</summary><p>Only active, approved institutions appear in the ordering directory after you sign in. Ask your institution whether it participates. Demo institutions do not represent a real institution’s participation.</p></details>
+        <details><summary>Who receives my documents?</summary><p>You choose the recipients in your order and review them as part of your release consent. Where secure electronic delivery is configured, the designated recipient verifies their email with a single-use code.</p></details>
+      </div>
+    </section>
+    <section id="about-platform" class="public-section public-platform" aria-labelledby="platform-heading">
+      <div class="public-section-heading"><div><p class="eyebrow">ONE CONNECTED WORKFLOW</p><h2 id="platform-heading">Built for the people<br>behind every record.</h2></div><p>TranscriptsKE is an academic document request platform for students and institutions in Kenya. We are developing the workflow with demo institutions before expanding participation.</p></div>
+      <div class="public-process">
+        <article><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg></span><h3>For students</h3><p>Link your academic record, request available documents, review the quote and consent, and follow your order from your account.</p></article>
+        <article><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-building"/></svg></span><h3>For institutions</h3><p>Authorized staff match records, review requests, manage holds, and prepare documents. Managers oversee the services and operational queues.</p></article>
+        <article><span class="small-icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span><h3>For recipients</h3><p>When secure electronic delivery is enabled, use the institution’s complete delivery link and a single-use email code to download your document.</p></article>
+      </div>
+    </section>
+    <section id="about-trust" class="public-section public-questions" aria-labelledby="trust-heading">
+      <div><p class="eyebrow">CARE AT EVERY STEP</p><h2 id="trust-heading">Your information.<br>A considered process.</h2><p>These are features of the application workflow. They are not a claim of accreditation, independent certification or participation by a particular institution.</p></div>
+      <div class="public-faq">
+        <details><summary>Email verification and record ownership</summary><p>Verifying your email confirms access to that mailbox. Institutional staff separately check your academic record ownership before allowing document requests.</p></details>
+        <details><summary>Release consent and recipient access</summary><p>You review the quote, documents and recipients before consenting to release. Configured electronic delivery uses expiring links and single-use recipient codes; institutions can revoke access.</p></details>
+        <details><summary>Payments and service availability</summary><p>Institutions set service fees and processing ranges. Card checkout or M-Pesa is available only when configured, and payment collection follows registrar approval. Demo services do not imply a live provider connection.</p></details>
+      </div>
+    </section>
+    <section id="about-help" class="public-section public-questions" aria-labelledby="help-heading">
+      <div><p class="eyebrow">WHEN YOU NEED A HAND</p><h2 id="help-heading">A little guidance<br>for your next step.</h2><p>Find the right next action without sharing passwords, email codes or private records on social media.</p></div>
+      <div class="public-faq">
+        <details><summary>I cannot sign in</summary><p>Verify your email first. Use “Verify your email” on the sign-in screen to request another code, or “Forgot password?” to reset your password. Local development email mode saves messages in the configured mail directory.</p></details>
+        <details><summary>I need an update on my request</summary><p>Sign in and open Orders. Select your order to see its timeline, staff messages and any requested action. Your institution handles academic decisions and processing questions.</p></details>
+        <details><summary>I received a document link</summary><p>Open the complete link from the notification email. Enter the exact recipient email and request an access code. If the link is expired or revoked, contact the issuing institution.</p></details>
+      </div>
+    </section>
+    <section class="public-get-started" aria-labelledby="get-started-heading"><div><p class="eyebrow">YOUR NEXT CHAPTER IS WAITING</p><h2 id="get-started-heading">Start with your story.<br>We’ll help connect the steps.</h2><p>Create your account to explore your institution’s available services.</p></div><a class="public-primary-link" href="#auth-register" data-auth-view="register">Create your account <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></section>
+  </div>
   <section id="workspace" hidden>
-    <div class="page-title"><div><p class="eyebrow">YOUR WORKSPACE</p><h1 id="welcome">Academic records</h1></div></div>
-    <nav aria-label="Workspace sections"><button data-view="student-view">My records</button><button data-view="orders-view">Orders</button><button data-view="staff-view" id="staff-tab" hidden>Institution workspace</button><button data-view="admin-view" id="admin-tab" hidden>Institution approvals</button></nav>
+    <div class="workspace-layout">
+    <aside class="sidebar">
+      <p class="sidebar-label">WORKSPACE</p>
+      <nav aria-label="Workspace sections"><button data-view="student-view"><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg>My records</button><button data-view="orders-view"><svg class="icon" aria-hidden="true"><use href="#i-orders"/></svg>Orders</button><button type="button" data-view="account-view"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Account</button><button data-view="staff-view" id="staff-tab" hidden><svg class="icon" aria-hidden="true"><use href="#i-building"/></svg>Institution workspace</button><button data-view="admin-view" id="admin-tab" hidden><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Institution approvals</button></nav>
+      <div class="sidebar-guide"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><strong>A little guidance</strong><p>Start by linking your academic record. Once confirmed, you can request your documents.</p><button type="button" class="text-button" id="open-workspace-guide">How it works <span aria-hidden="true">↗</span></button></div>
+      <div class="account-card"><span id="account-avatar" class="account-avatar" aria-hidden="true"></span><div><strong id="account-name"></strong><span id="account-role"></span></div></div>
+    </aside>
+    <div class="workspace-content">
+      <div class="page-title"><div><p class="eyebrow" id="view-eyebrow">MY ACADEMIC RECORDS</p><h1 id="welcome">Academic records</h1><p id="view-description" class="muted">Manage your records and get ready for your next opportunity.</p></div><span class="account-verified"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Verified account</span></div>
+      <details id="workspace-guide" class="panel workspace-guide" hidden><summary>Your document journey</summary><ol><li><strong>Link your academic record.</strong> Your institution checks the information you provide.</li><li><strong>Create an order.</strong> Choose documents and recipients, review your quote and authorize release.</li><li><strong>Follow progress.</strong> Respond to staff questions and pay after registrar approval when payment is enabled.</li><li><strong>Receive your documents.</strong> The institution prepares and releases the PDF when configured; recipients use an email code to access it.</li></ol></details>
     <section id="student-view">
-      <div class="grid">
-        <div class="panel"><h2 id="record-form-title">Link an academic record</h2><p>Choose an institution and document service. Staff will check your details against their records before confirming ownership.</p>
+      <div class="workspace-banner"><div><span class="eyebrow">ONE RECORD. MANY POSSIBILITIES.</span><h2>Make your next move.</h2><p>A new program, a new role, a new beginning.<br>Your academic documents help you get there.</p><button type="button" data-view="orders-view">Request documents <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></div><svg class="banner-document" aria-hidden="true"><use href="#i-record"/></svg></div>
+      <div class="summary-grid" aria-label="Your academic record overview"><article class="summary-card"><span class="summary-icon"><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg></span><div><span>Linked records</span><strong id="summary-linked">—</strong></div></article><article class="summary-card"><span class="summary-icon green"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span><div><span>Confirmed records</span><strong id="summary-confirmed">—</strong></div></article><article class="summary-card"><span class="summary-icon amber"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg></span><div><span>Awaiting confirmation</span><strong id="summary-pending">—</strong></div></article></div>
+      <div class="grid records-grid">
+        <div class="panel record-form-panel"><p class="eyebrow">GET CONNECTED</p><h2 id="record-form-title">Link an academic record</h2><p>Choose an institution and document service. Staff will check your details against their records before confirming ownership.</p>
           <form id="record-form"><label>Institution<select name="institution_id" id="student-institution" required></select></label><label>Document service<select name="service_id" id="student-service" required></select></label><p id="service-summary" class="muted"></p><p id="ordering-instructions"></p>
-            <label>Admission number<input name="admission_number" required maxlength="100"></label><label>Name on academic record<input name="name_on_record" required maxlength="255"></label>
+            <fieldset><legend>Locate your academic record</legend><label>Lookup method<select id="record-lookup-method"><option value="admission">Admission number</option><option value="identity">I forgot my admission number — use ID/passport</option></select></label><label id="admission-lookup-field">Admission number<input name="admission_number" required maxlength="100"></label><label id="identity-lookup-field" hidden>National ID or passport number<input name="id_number" minlength="4" maxlength="32" pattern="[A-Za-z0-9-]+" autocomplete="off" spellcheck="false" disabled><span>Use the number held by your institution. Staff must verify record ownership; a number alone is not proof. Re-enter this number if staff request a resubmission.</span></label></fieldset><label>Name on academic record<input name="name_on_record" required maxlength="255"></label>
             <label>Program <span id="program-requirement">(optional)</span><input name="program" maxlength="255"></label>
             <div class="row"><label>First attendance year<input name="attendance_start_year" type="number" min="1900"></label><label>Last attendance year<input name="attendance_end_year" type="number" min="1900"></label></div>
             <label>Previous names <span id="names-requirement">(optional)</span><textarea name="previous_names" rows="2" placeholder="One name per line; leave blank if none"></textarea></label>
-            <p class="muted">Only provide details relevant to locating your academic record. Do not enter identity document numbers or financial information.</p><button id="record-submit">Submit for matching</button><button id="cancel-resubmit" type="button" class="secondary" hidden>Cancel revision</button>
+            <p class="muted">Only provide details relevant to locating your academic record. Enter ID numbers only in the dedicated field. Do not enter financial information.</p><button id="record-submit">Submit for matching</button><button id="cancel-resubmit" type="button" class="secondary" hidden>Cancel revision</button>
           </form>
         </div>
-        <div class="panel"><div class="row"><h2>My record links</h2><button id="refresh-links" class="secondary">Refresh</button></div><div id="my-links"></div><button id="more-links" class="secondary" hidden>Load more</button><div id="student-history"></div></div>
+        <div class="panel record-list-panel"><p class="eyebrow">YOUR INSTITUTIONS</p><div class="row"><h2>My record links</h2><button id="refresh-links" class="secondary">Refresh</button></div><div id="my-links"></div><button id="more-links" class="secondary" hidden>Load more</button><div id="student-history"></div></div>
       </div>
       <details class="panel"><summary>Accept a staff invitation</summary><form id="accept-invitation-form"><label>Invitation code<input name="token" required autocomplete="one-time-code"></label><button>Accept invitation</button></form></details>
     </section>
     <section id="orders-view" hidden>
+      <div class="section-heading"><div><h2>Your document requests</h2><p>From the first draft to the final delivery, follow every step here.</p></div><span class="section-tag">Quotes before commitment</span></div>
       <div class="panel"><h2>Request academic documents</h2><form id="new-order-form"><label>Confirmed academic record<select id="order-record" required></select></label><button>Create draft order</button></form><p class="muted">One institution per order. Choose documents and recipients, review the fees, and authorize release before submitting.</p></div>
       <div class="grid"><div class="panel"><div class="row"><h2>My orders</h2><button id="refresh-orders" class="secondary">Refresh</button></div><div id="order-list"></div><button id="more-orders" class="secondary" hidden>Load more</button></div>
       <div class="panel" id="order-detail" hidden><h2 id="order-title"></h2><p id="order-state"></p>
@@ -55,12 +173,18 @@
         <div id="student-payments"></div><div id="student-fulfillment"></div><div id="student-documents"></div><div id="order-timeline"></div><div id="order-conversation"></div><form id="order-message-form"><label>Reply to<select name="in_reply_to_id"><option value="">General message</option></select></label><label>Message to the institution<textarea name="body" required maxlength="2000"></textarea></label><button>Send message</button></form>
       </div></div>
     </section>
+    <section id="account-view" hidden>
+      <div class="section-heading"><div><h2>Your account</h2><p>Keep your account access up to date.</p></div></div>
+      <div class="grid"><section class="panel"><p class="eyebrow">ACCOUNT DETAILS</p><h2 id="settings-name"></h2><p id="settings-email"></p><p class="muted">Your email is verified. Academic record ownership is reviewed separately by your institution.</p><h3>Forgot your current password?</h3><p class="muted">Sign out and request a single-use reset code using your registered email.</p><button id="account-password-recovery" type="button" class="secondary">Sign out and reset password</button></section>
+      <section class="panel"><h2>Change password</h2><p>Enter your current password and choose a new one. A successful change signs you out on all devices.</p><form id="change-password-form"><label>Current password<input name="current_password" type="password" required autocomplete="current-password"></label><label>New password<input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label><label>Confirm new password<input name="confirm_password" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label><button>Change password</button></form></section></div>
+    </section>
     <section id="staff-view" hidden>
+      <div class="section-heading"><div><h2>Institution workspace</h2><p>Review records, manage requests and help students move forward.</p></div></div>
       <label class="institution-picker">Your institution<select id="staff-institution"></select></label><p id="staff-institution-status" class="muted"></p>
       <div class="panel"><div class="row"><h2>Academic record matching</h2><label>Status<select id="match-filter"><option value="pending">Awaiting review</option><option value="needs_information">Needs information</option><option value="matched">Matched</option><option value="rejected">Rejected</option><option value="">All</option></select></label><button id="refresh-matches" class="secondary">Refresh</button></div><div id="match-list"></div><button id="more-matches" class="secondary" hidden>Load more</button><div id="review-area" hidden><h3 id="review-title"></h3><div id="review-details"></div><div id="review-history"></div>
         <form id="decision-form"><label>Decision<select name="decision"><option value="needs_information">Request more information</option><option value="matched">Confirm record ownership</option><option value="rejected">Reject matching request</option></select></label><label>Message to student<textarea name="student_message" required maxlength="2000"></textarea></label>
-          <div id="ownership-fields" hidden><label>Institutional record reference<input name="record_reference" maxlength="100"></label><label class="check"><input name="ownership_confirmed" type="checkbox">I checked institutional records and independently confirmed this student's ownership. An admission number alone is insufficient.</label></div>
-          <label>Private staff evidence note<textarea name="internal_note" maxlength="2000" placeholder="Describe the institutional checks performed. Do not copy identity documents here."></textarea></label><button>Save decision</button>
+          <div id="ownership-fields" hidden><label>Institutional record reference<input name="record_reference" maxlength="100"></label><label class="check"><input name="ownership_confirmed" type="checkbox">I checked institutional records and independently confirmed this student's ownership. An admission or ID number alone is insufficient.</label></div>
+          <label>Private staff evidence note<textarea name="internal_note" maxlength="2000" placeholder="Describe the institutional checks performed. Do not copy identity documents or ID numbers here."></textarea></label><button>Save decision</button>
         </form>
       </div></div>
       <div class="panel"><div class="row"><h2>Submitted document orders</h2><button id="refresh-staff-orders" class="secondary">Refresh orders</button></div><label>Document status<select id="registrar-state"><option value="">All documents</option><option value="awaiting_review">Awaiting review</option><option value="processing">Processing</option><option value="ready">Ready</option><option value="issued">Issued</option><option value="delivered">Downloaded</option><option value="rejected">Rejected</option></select></label><label class="check"><input id="registrar-mine" type="checkbox">Assigned to me</label><label class="check"><input id="registrar-holds" type="checkbox">Active holds</label><div id="staff-order-list"></div><button id="more-staff-orders" class="secondary" hidden>Load more</button><div id="staff-order-detail" hidden><h3 id="staff-order-title"></h3><div id="staff-order-summary"></div><div id="staff-order-attachments"></div><div id="staff-payments"></div><div id="registrar-workspace"></div><div id="staff-documents"></div><div id="staff-order-timeline"></div><div id="staff-order-conversation"></div><form id="staff-order-message-form"><label>Message to student<textarea name="body" required maxlength="2000"></textarea></label><label class="check"><input name="requires_response" type="checkbox">Request a response from the student</label><button>Send message</button></form><form id="staff-order-cancel-form"><label>Cancellation decision<select name="decision"><option value="approved">Approve cancellation</option><option value="rejected">Reject cancellation</option></select></label><label>Reason<textarea name="reason" required maxlength="2000"></textarea></label><button>Save cancellation decision</button></form></div></div>
@@ -72,8 +196,21 @@
       </section>
     </section>
     <section id="admin-view" class="panel" hidden><h2>Institution approval</h2><details><summary>Add an institution</summary><form id="create-institution-form"><label>Institution name<input name="name" required maxlength="255"></label><label>Institution code<input name="code" required maxlength="50" pattern="[A-Za-z0-9_-]+"></label><label>Country<input name="country" value="Kenya" required maxlength="100"></label><button>Create unapproved institution</button></form></details><p>Approve an institution only after checking its authority to participate. Demo institutions are for development only.</p><label>Institution<select id="admin-institution"></select></label><p id="approval-status"></p><form id="approval-form"><label class="check"><input name="approved" type="checkbox">Approved to accept submissions</label><label>Reason<textarea name="reason" required maxlength="1000"></textarea></label><button>Save approval</button></form><div id="pilot-admin" hidden></div><h3>Appoint institution staff</h3><form id="admin-invite-form"><label>Email<input name="email" type="email" required></label><label>Role<select name="role"><option value="manager">Institution manager</option><option value="staff">Institution staff</option></select></label><button>Send invitation</button></form></section>
+    </div>
+    </div>
   </section>
 </main>
-<footer>TranscriptsKE · Institutions confirm record ownership. Orders can be submitted here. Payments and official document delivery are not yet available.</footer>
+<footer class="site-footer expanded-footer" aria-label="Website footer">
+  <div class="footer-intro"><a class="brand" href="/workspace"><span class="brand-mark" aria-hidden="true">tk<span>.</span></span><span class="brand-name">Transcripts<span>KE</span></span></a><p>Your academic journey, connected.<br>From your institution to your next opportunity.</p><span class="footer-pilot-label">Built with demo institutions · Pilot workflow</span></div>
+  <nav id="footer-directory" class="footer-directory" aria-label="Footer navigation">
+    <div><h2>Students</h2><a href="#about-workflow">How it works</a><button type="button" data-workspace-entry="orders-view">Request a document</button><button type="button" data-workspace-entry="orders-view">Track your order</button><a href="#auth-register" data-auth-view="register">Create an account</a><a href="#login-form" data-auth-view="login">Student sign in</a></div>
+    <div><h2>Document services</h2><a href="#about-documents">Academic transcripts</a><a href="#about-documents">Degree certificates</a><a href="#about-documents">Enrollment letters</a><a href="#about-documents">Completion letters</a><a href="#about-trust">Fees and payments</a></div>
+    <div><h2>Institutions</h2><a href="#about-institutions">Institutional review</a><a href="#about-platform">Our platform</a><a href="#about-trust">Controlled document release</a><a href="#login-form" data-auth-view="login">Staff sign in</a><p class="footer-note">Institution access is assigned to verified accounts by authorized managers.</p></div>
+    <div><h2>Resources</h2><a href="#about-platform">About TranscriptsKE</a><a href="#about-questions">Common questions</a><a href="#about-help">Account and order help</a><a href="#about-trust">Trust and access</a><a href="#about-help">Receiving a document</a></div>
+  </nav>
+  <div class="footer-action-row"><div><p class="eyebrow">READY FOR YOUR NEXT CHAPTER?</p><h2>Take your next step.</h2></div><div class="footer-quick-actions"><button type="button" data-workspace-entry="orders-view">Request documents <span aria-hidden="true">↗</span></button><button type="button" class="secondary" data-workspace-entry="orders-view">Check order status</button><a class="footer-help-link" href="#about-help">Get help <span aria-hidden="true">↗</span></a></div></div>
+  <section class="footer-social" aria-labelledby="social-heading"><div><h2 id="social-heading">Stay connected</h2><p id="social-demo-note">Sample handles for design preview. These are not registered TranscriptsKE accounts; links open each social platform.</p></div><div id="social-links" class="social-links"></div></section>
+  <div class="footer-bottom"><span>TranscriptsKE · Review. Request. Move forward.</span><a href="#" id="back-to-top">Back to top ↑</a></div>
+</footer>
 </body>
 </html>
