@@ -2,7 +2,8 @@ import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.academic_records import router as academic_records_router
@@ -29,6 +30,21 @@ app = FastAPI(
     description="Academic transcript request and verification platform for Kenya.",
     version="0.1.0",
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_errors(request: Request, exc: RequestValidationError):
+    # Never echo submitted passwords or identity numbers in validation responses.
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": [
+                {"type": error["type"], "loc": error["loc"], "msg": error["msg"]}
+                for error in exc.errors()
+            ]
+        },
+    )
+
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(institutions_router, prefix="/api/v1")
@@ -71,8 +87,17 @@ async def private_api_responses(request: Request, call_next):
 
 @app.get("/workspace", include_in_schema=False)
 def workspace():
-    return FileResponse(
-        STATIC_DIRECTORY / "workspace.html",
+    mail_hint = ""
+    if settings.APP_ENV == "development" and settings.MAIL_BACKEND == "file":
+        mail_hint = (
+            '<p class="development-mail-hint"><strong>Local development email</strong><br>'
+            "No email is sent to your inbox in this mode. Verification and reset codes are saved as private email files in your "
+            "configured mail directory (default: <code>backend/.mailbox/</code>). "
+            "Open the email addressed to you and copy its code here.</p>"
+        )
+    content = (STATIC_DIRECTORY / "workspace.html").read_text(encoding="utf-8")
+    return HTMLResponse(
+        content.replace("<!-- development-mail-hint -->", mail_hint),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
