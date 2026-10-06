@@ -10,6 +10,7 @@ from app.models.academic import AcademicRecordLink, MatchStatus, RecordMatchEven
 from app.models.user import User
 from app.schemas.academic import (
     Id,
+    IdentityRead,
     MatchDecision,
     RecordCreate,
     RecordEventRead,
@@ -21,10 +22,12 @@ from app.schemas.academic import (
 from app.services.academic import (
     SUBMISSION_FIELDS,
     add_match_event,
+    audit,
     check_version,
     lock_institution,
     validate_submission,
 )
+from app.services.identity import identity_fields, reveal_identity
 from app.services.tokens import utcnow
 
 router = APIRouter(tags=["academic record matching"])
@@ -70,7 +73,8 @@ def create_link(
         user_id=user.id,
         requirements_snapshot=requirements,
         status=MatchStatus.PENDING.value,
-        **payload.model_dump(mode="json"),
+        **payload.model_dump(mode="json", exclude={"id_number"}),
+        **identity_fields(payload.id_number, user.id, payload.institution_id),
     )
     db.add(link)
     try:
@@ -78,7 +82,7 @@ def create_link(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
-            409, "You already have a link for this institution and admission number"
+            409, "You already have a link for this institution and identifier"
         ) from exc
     add_match_event(db, link, user.id)
     db.commit()
@@ -143,6 +147,10 @@ def resubmit_link(
         )
     for field in SUBMISSION_FIELDS:
         setattr(link, field, getattr(payload, field))
+    for field, value in identity_fields(
+        payload.id_number, user.id, link.institution_id
+    ).items():
+        setattr(link, field, value)
     link.requirements_snapshot = requirements
     link.status = MatchStatus.PENDING.value
     link.student_message = None
@@ -154,7 +162,7 @@ def resubmit_link(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
-            409, "You already have a link for this institution and admission number"
+            409, "You already have a link for this institution and identifier"
         ) from exc
     add_match_event(db, link, user.id)
     db.commit()
@@ -198,6 +206,25 @@ def read_match(
     user: User = Depends(get_verified_user),
 ):
     return staff_link(db, user, institution_id, link_id)
+
+
+@router.get(
+    "/staff/institutions/{institution_id}/record-matches/{link_id}/identity",
+    response_model=IdentityRead,
+)
+def read_identity(
+    institution_id: Id,
+    link_id: Id,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+):
+    link = staff_link(db, user, institution_id, link_id)
+    if not link.identity_ciphertext:
+        raise HTTPException(404, "No ID number was provided")
+    raw = reveal_identity(link.identity_ciphertext)
+    audit(db, user.id, institution_id, "record_identity_viewed", subject_id=link.id)
+    db.commit()
+    return IdentityRead(id_number=raw)
 
 
 @router.get(
