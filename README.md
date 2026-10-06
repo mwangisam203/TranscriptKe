@@ -34,9 +34,30 @@ and secure recipient delivery are also disabled until configured.
 - Repeatable fictional development institutions and an explicit local administrator bootstrap command.
 - Local file email delivery for development and SMTP with STARTTLS for deployment.
 
-Open the basic browser workspace at `/workspace`, or use the interactive API documentation
+Open the browser workspace at `/workspace`, or use the interactive API documentation
 at `/docs`. The workspace is served by FastAPI and needs no separate frontend build.
 See the [Milestone 2 guide](docs/milestone-2.md) for the demo walkthrough and new endpoints.
+
+## Frontend workspace
+
+The frontend uses local HTML, CSS and JavaScript served by FastAPI. Starting the
+backend also serves `/workspace`; it needs no npm command or frontend build.
+Visitors can scroll through the public overview, document types, institution workflow
+and FAQs before signing in. Header links and the account call to action connect
+these sections to the account forms. Public information returns after logout.
+The interface includes account tabs, guided verification/recovery, a responsive
+workspace sidebar, live record counts, and the recipient delivery page at `/recipient`.
+
+To change the design, edit `backend/app/static/workspace.html` and `workspace.css`.
+`interface.js` handles account panels, profile display, record counts and empty states;
+`workspace.js` and the order/payment/issuance modules connect controls to the API.
+All assets are local and the existing content security policy stays in place.
+Refresh the browser after editing; use a hard refresh if cached assets are visible.
+
+With development file email, the sign-in page explains where to find verification
+and reset codes. This hint is hidden for SMTP and production configurations.
+No access codes or credentials are rendered in that hint. Record counts come from
+the authenticated API, and account display is cleared when signing out.
 
 ## Requirements and setup
 
@@ -334,3 +355,95 @@ Real institution and provider acceptance remains required; submission or a brows
 is never proof of payment or official document issuance.
 The basic workspace can evolve into the planned Next.js frontend. MFA, SIS integrations,
 third-party ordering, and credential verification remain future work.
+
+### Verification email setup and theme preference
+
+The workspace and recipient portal have a Theme selector: System (the default),
+Light, or Dark. Your choice is saved in your browser and applies before rendering
+on subsequent visits.
+
+Registration sends a single-use verification code through the configured mail
+backend. With the development default `MAIL_BACKEND=file`, no email reaches your
+inbox: open the private `.eml` message addressed to you in `backend/.mailbox/`
+(or your configured `MAIL_DIRECTORY`) and paste the entire code into Verify email.
+These codes are intentionally long, expire, and are stored hashed in the database.
+
+For actual inbox delivery, enter your provider settings **locally** in `backend/.env`:
+
+```dotenv
+MAIL_BACKEND=smtp
+MAIL_FROM=your-authorized-sender@example.com
+SMTP_HOST=your-provider-starttls-host
+SMTP_PORT=587
+SMTP_STARTTLS=true
+SMTP_USERNAME=your-provider-username
+SMTP_PASSWORD=your-provider-smtp-password
+```
+
+Use your provider's SMTP credentials and authorized sender address. Keep `.env`
+out of Git. Restart the app after changing settings. From `backend`, explicitly
+submit a test message to your own address:
+
+```bash
+uv run python -m app.cli test-email --email your-address@example.com
+```
+
+The command does not create accounts or verification tokens. SMTP acceptance does
+not guarantee inbox delivery: check spam and your provider's delivery logs. Once
+the test arrives, register or use **Verify your email → Need another code? → Send another code**
+for an existing unverified account. Automated tests mock SMTP; they do not send
+real messages or confirm provider delivery.
+
+### Public directory footer and social links
+
+The workspace footer groups student actions, document types, institution guidance,
+and resources. About, account/order help, and trust/access sections describe the
+implemented workflow without claiming certifications or live institutional partners.
+Request/status actions require sign-in and then open the user's Orders view;
+institution staff use the same sign-in flow with their assigned memberships.
+
+Social cards currently show **demo handles**, not registered accounts. Their links
+open the LinkedIn, Instagram, Facebook and X homepages. Edit the `profiles` entries
+in `backend/app/static/social.js` to replace each `url: null` with the HTTPS profile
+URL of an account you control. Configured cards link to that profile and stop showing
+the demo handle. No social accounts or privileged application users are created.
+Detailed legal policies, careers, partnerships, live demo booking and unsupported
+product lines are deferred until their information and processes exist.
+
+### ID fallback, account passwords and Home navigation
+
+Students who forgot an admission number can choose **Lookup method → I forgot my
+admission number — use ID/passport** in Link an academic record. The number must
+match information held by the institution; it does not verify email, replace staff
+ownership checks, or automatically approve records. Existing admission lookup still
+works. Normal record views and history show only a mask ending in two characters.
+For resubmissions using ID lookup, enter the ID again; the app never pre-fills it.
+
+Migration `0010` adds encrypted ID storage and permits a missing admission number
+when an ID is provided. Keep a dedicated `IDENTITY_ENCRYPTION_KEY` in local `.env`
+and in your deployment's secret configuration. Generate it once:
+
+```bash
+cd backend
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+uv run alembic upgrade head
+```
+
+Save the generated value as `IDENTITY_ENCRYPTION_KEY=...` in `.env` and restart the
+server. Back up this key privately alongside the database; replacing it makes
+existing encrypted IDs unreadable. ID lookup fails closed when the key is absent;
+admission lookup remains available. The local development key has been configured
+without printing it. Do not commit `.env` or copy the development key to production.
+
+Authorized institution staff can explicitly **View ID for institutional matching**.
+This uses `GET /api/v1/staff/institutions/{institution_id}/record-matches/{link_id}/identity`
+and records an access audit without the ID. IDs are not copied into quotes,
+ordinary list responses, record history, or validation errors. Staff must also
+avoid copying IDs into free-text messages or evidence notes.
+
+Signed-in **Account** contains Change password (current, new, confirmation), plus
+Sign out and reset password. Password changes revoke existing sessions and return
+to sign-in. The existing Forgot password? flow uses an expiring email reset code.
+Clicking the Home/brand link within the signed-in workspace now navigates to My
+records without reloading the page. Tokens remain in memory; a full browser reload
+or a newly opened tab still requires sign-in.
