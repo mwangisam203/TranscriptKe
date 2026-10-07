@@ -18,10 +18,6 @@ class VersionInput(StrictInput):
     expected_version: int = Field(ge=1)
 
 
-class OrderCreate(StrictInput):
-    academic_record_link_id: Id
-
-
 class PostalAddress(StrictInput):
     line1: ShortText
     line2: str = Field(default="", max_length=255)
@@ -34,6 +30,7 @@ class RecipientInput(StrictInput):
     key: Key
     name: ShortText
     organization: str = Field(default="", max_length=255)
+    destination_type: Literal["self", "institution", "other"] = "other"
     email: NormalizedEmail | None = Field(default=None, max_length=255)
     delivery_method: DeliveryMethod
     postal_address: PostalAddress | None = None
@@ -41,6 +38,12 @@ class RecipientInput(StrictInput):
 
     @model_validator(mode="after")
     def destination_details(self):
+        if self.destination_type == "institution" and not self.organization.strip():
+            raise ValueError(
+                "Institution delivery requires a destination institution name"
+            )
+        if self.destination_type == "self" and self.organization.strip():
+            raise ValueError("Self delivery must not include a destination institution")
         if self.delivery_method == "secure_electronic" and self.email is None:
             raise ValueError("Electronic delivery requires a recipient email")
         if self.delivery_method == "post" and self.postal_address is None:
@@ -48,6 +51,11 @@ class RecipientInput(StrictInput):
         if self.delivery_method != "post" and self.postal_address is not None:
             raise ValueError("Postal addresses are only collected for postal delivery")
         return self
+
+
+class OrderCreate(StrictInput):
+    academic_record_link_id: Id
+    recipient: RecipientInput | None = None
 
 
 class ItemInput(StrictInput):
@@ -90,7 +98,31 @@ class ItemMutation(ItemInput, VersionInput):
     pass
 
 
+class SignaturePoint(StrictInput):
+    x: float = Field(ge=0, le=1, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, allow_inf_nan=False)
+
+
 class ConsentInput(StrictInput):
+    signer_name: ShortText
+    signature: list[list[SignaturePoint]] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def drawn_signature(self):
+        points = [point for stroke in self.signature for point in stroke]
+        if (
+            len(points) < 3
+            or len(points) > 2000
+            or any(len(stroke) < 2 for stroke in self.signature)
+        ):
+            raise ValueError("Draw a signature with 3 to 2000 points")
+        if (
+            max(p.x for p in points) - min(p.x for p in points) < 0.02
+            and max(p.y for p in points) - min(p.y for p in points) < 0.02
+        ):
+            raise ValueError("Draw a signature rather than a single dot")
+        return self
+
     quote_id: UUID
     text_version: str = Field(max_length=30)
     accepted: Literal[True]
@@ -181,6 +213,7 @@ class CancellationRead(BaseModel):
 
 
 class OrderRead(BaseModel):
+    collection_policy: Literal["before_review", "after_review"]
     id: int
     reference: str
     institution_id: int
