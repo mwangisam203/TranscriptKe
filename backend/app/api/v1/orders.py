@@ -61,6 +61,7 @@ from app.services.orders import (
     CONSENT_TEXT,
     CONSENT_VERSION,
     can_cancel,
+    delete_unfinished_order,
     digest,
     draft_data,
     draft_only,
@@ -76,6 +77,13 @@ from app.services.orders import (
 )
 
 router = APIRouter(tags=["transcript orders"])
+
+
+@router.get("/orders/checkout-policy")
+def checkout_policy(user: User = Depends(get_verified_user)):
+    return {"collection_policy": settings.PAYMENT_COLLECTION_POLICY}
+
+
 IdempotencyKey = Annotated[
     str,
     Header(
@@ -87,7 +95,7 @@ IdempotencyKey = Annotated[
 ]
 
 
-def new_order(db, user, link_id, key, source=None):
+def new_order(db, user, link_id, key, source=None, recipient=None):
     link = db.scalar(
         select(AcademicRecordLink).where(
             AcademicRecordLink.id == link_id, AcademicRecordLink.user_id == user.id
@@ -98,12 +106,13 @@ def new_order(db, user, link_id, key, source=None):
     # Serializing by the account also protects retries that accidentally select a different institution.
     institution = lock_institution(db, link.institution_id)
     db.scalar(select(User).where(User.id == user.id).with_for_update())
-    fingerprint = digest(
-        {
-            "academic_record_link_id": link_id,
-            "source_order_id": source.id if source else None,
-        }
-    )
+    creation_data = {
+        "academic_record_link_id": link_id,
+        "source_order_id": source.id if source else None,
+    }
+    if recipient is not None:
+        creation_data["recipient"] = recipient.model_dump(mode="json")
+    fingerprint = digest(creation_data)
     existing = db.scalar(
         select(Order).where(Order.user_id == user.id, Order.creation_key == key)
     )
@@ -122,6 +131,7 @@ def new_order(db, user, link_id, key, source=None):
         creation_key=key,
         creation_hash=fingerprint,
         status="draft",
+        collection_policy=settings.PAYMENT_COLLECTION_POLICY,
         version=1,
     )
     db.add(order)
@@ -131,6 +141,24 @@ def new_order(db, user, link_id, key, source=None):
         data = draft_data(db, source)
         data["expected_version"] = 1
         replace_draft(db, order, user, DraftInput(**data))
+    elif recipient is not None:
+        replace_draft(
+            db,
+            order,
+            user,
+            DraftInput(
+                expected_version=1,
+                recipients=[recipient],
+                items=[
+                    {
+                        "key": "document-1",
+                        "service_id": link.service_id,
+                        "recipient_key": recipient.key,
+                        "quantity": 1,
+                    }
+                ],
+            ),
+        )
     db.flush()
     return order
 
@@ -158,7 +186,13 @@ def create_order(
     db: Session = Depends(get_db),
     user: User = Depends(get_verified_user),
 ):
-    order = new_order(db, user, payload.academic_record_link_id, idempotency_key)
+    order = new_order(
+        db,
+        user,
+        payload.academic_record_link_id,
+        idempotency_key,
+        recipient=payload.recipient,
+    )
     db.commit()
     return read_order(db, order)
 
@@ -373,7 +407,30 @@ def accept_consent(
     quote = valid_quote(db, order, payload.quote_id)
     if payload.text_version != CONSENT_VERSION:
         raise HTTPException(409, "Review the current consent wording")
+    import json
+
+    from app.services.profiles import profile_cipher
+
+    cipher = profile_cipher()
+    signature_json = json.dumps(
+        {
+            "signer_name": payload.signer_name,
+            "signature": [
+                [p.model_dump() for p in stroke] for stroke in payload.signature
+            ],
+        },
+        separators=(",", ":"),
+    )
     consent = db.scalar(select(OrderConsent).where(OrderConsent.quote_id == quote.id))
+    if consent is not None and (
+        not consent.signature_ciphertext
+        or cipher.decrypt(consent.signature_ciphertext.encode()).decode()
+        != signature_json
+    ):
+        raise HTTPException(
+            409,
+            "This quote already has different signed consent. Request a fresh quote.",
+        )
     if consent is None:
         consent = OrderConsent(
             order_id=order.id,
@@ -381,6 +438,7 @@ def accept_consent(
             user_id=user.id,
             text_version=CONSENT_VERSION,
             text=CONSENT_TEXT,
+            signature_ciphertext=cipher.encrypt(signature_json.encode()).decode(),
             scope_hash=quote.scope_hash,
         )
         db.add(consent)
@@ -613,13 +671,15 @@ def request_cancellation(
         if existing and existing.reason == payload.reason:
             return read_order(db, order)
     check_version(order.version, payload.expected_version)
-    if order.status not in ("draft", "submitted") or not can_cancel(db, order):
+    if order.status not in ("draft", "awaiting_payment", "submitted") or not can_cancel(
+        db, order
+    ):
         raise HTTPException(
             409,
             "This order is not eligible for cancellation at its current processing or payment stage",
         )
     cancellation = OrderCancellation(order_id=order.id, reason=payload.reason)
-    if order.status == "draft":
+    if order.status in ("draft", "awaiting_payment"):
         order.status = "cancelled"
         cancellation.status = "approved"
         cancellation.decision_reason = "Unsubmitted draft cancelled by its owner."
@@ -785,3 +845,76 @@ def decide_cancellation(
     event(db, order, user.id, "cancellation_" + payload.decision, payload.reason)
     db.commit()
     return read_order(db, order)
+
+
+def signature_evidence(db, user, order, consent_id):
+    import json
+
+    from cryptography.fernet import InvalidToken
+
+    from app.models.access import AccessEvent
+    from app.services.profiles import profile_cipher
+
+    consent = db.get(OrderConsent, consent_id)
+    if (
+        consent is None
+        or consent.order_id != order.id
+        or not consent.signature_ciphertext
+    ):
+        raise HTTPException(404, "Signed consent not found")
+    try:
+        evidence = json.loads(
+            profile_cipher().decrypt(consent.signature_ciphertext.encode())
+        )
+    except (InvalidToken, ValueError) as exc:
+        raise HTTPException(503, "Signed consent unavailable") from exc
+    db.add(
+        AccessEvent(
+            actor_id=user.id,
+            institution_id=order.institution_id,
+            subject_id=consent.id,
+            action="order_signature_viewed",
+        )
+    )
+    db.commit()
+    return {
+        **evidence,
+        "text": consent.text,
+        "text_version": consent.text_version,
+        "quote_id": consent.quote_id,
+        "accepted_at": consent.accepted_at,
+    }
+
+
+@router.get("/orders/{order_id}/consents/{consent_id}/signature")
+def read_signature(
+    order_id: Id,
+    consent_id: Id,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+):
+    return signature_evidence(db, user, get_order(db, user, order_id), consent_id)
+
+
+@router.get("/staff/institutions/{institution_id}/orders/{order_id}/signed-consent")
+def staff_signature(
+    institution_id: Id,
+    order_id: Id,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+):
+    order = get_order(db, user, order_id, institution_id=institution_id)
+    if not order.submission_consent_id:
+        raise HTTPException(404, "Signed consent not found")
+    return signature_evidence(db, user, order, order.submission_consent_id)
+
+
+@router.delete("/orders/{order_id}", status_code=204)
+def discard_order(
+    order_id: Id,
+    expected_version: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+):
+    delete_unfinished_order(db, user, order_id, expected_version)
+    return Response(status_code=204)
