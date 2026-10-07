@@ -8,9 +8,12 @@ from pydantic import (
     EmailStr,
     Field,
     field_validator,
+    model_validator,
 )
 
 from app.models.user import UserRole
+from app.schemas.common import StrictInput
+from app.schemas.profile import PersonalDetails
 
 
 def normalize_email(value):
@@ -18,10 +21,6 @@ def normalize_email(value):
 
 
 NormalizedEmail = Annotated[EmailStr, BeforeValidator(normalize_email)]
-
-
-class StrictInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
 
 class EmailRequest(StrictInput):
@@ -40,12 +39,21 @@ class NewPassword(StrictInput):
 
 
 class UserRegister(EmailRequest, NewPassword):
-    full_name: str = Field(min_length=1, max_length=255)
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    profile: PersonalDetails | None = None
 
     @field_validator("full_name", mode="before")
     @classmethod
     def normalize_full_name(cls, value):
         return " ".join(value.split()) if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_name(self):
+        if self.profile is not None:
+            self.full_name = self.profile.full_name
+        if not self.full_name or len(self.full_name) > 255:
+            raise ValueError("Provide a full name of at most 255 characters")
+        return self
 
 
 class UserLogin(EmailRequest):
