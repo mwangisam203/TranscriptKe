@@ -1,7 +1,7 @@
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -25,8 +25,10 @@ from app.schemas.payments import PaymentCreate, RefundInput
 from app.services.academic import check_version
 from app.services.orders import digest, get_order, utcnow
 from app.services.payment_gateways import (
+    GatewayUnavailable,
     configured,
     get_gateways,
+    institution_collection_enabled,
     minor_amount,
     verify_callback,
     verify_stripe,
@@ -61,7 +63,7 @@ def overview(db, order):
     methods = [
         provider
         for provider in ("stripe", "mpesa")
-        if order.institution_id == settings.PAYMENT_INSTITUTION_ID
+        if institution_collection_enabled(db, order.institution_id)
         and configured(provider)
     ]
     if (order.submitted_snapshot or {}).get("total_minor", 0) % 100:
@@ -71,6 +73,9 @@ def overview(db, order):
         "version": order.version,
         "payment_status": order.payment_status,
         "available_methods": methods,
+        "merchant_scope": settings.PAYMENT_ROUTING_MODE == "platform"
+        and "platform"
+        or "institution",
         "mode": settings.PAYMENT_MODE,
         "blockers": eligibility(db, order),
         "attempts": [public_payment(db, p) for p in attempts],
@@ -150,6 +155,10 @@ def receipt(
         "receipt_reference": "PAY-" + payment.id,
         "order_reference": order.reference,
         "provider": payment.provider,
+        "merchant_scope": payment.merchant_scope,
+        "collected_by": "TranscriptsKE"
+        if payment.merchant_scope == "platform"
+        else "Institution",
         "mode": payment.mode,
         "status": payment.status,
         "amount_minor": payment.amount_minor,
@@ -244,6 +253,8 @@ def approve_refund(
     order = get_order(db, user, order_id, institution_id=institution_id, lock=True)
     require_academic_staff(db, user, institution_id, manage=True)
     payment = payment_for(db, order, payment_id)
+    if payment.merchant_scope == "platform":
+        raise HTTPException(403, "TranscriptsKE administrators handle platform refunds")
     request_refund(
         db, order, payment, user, payload.reason, payload.expected_version, approve=True
     )
@@ -268,6 +279,8 @@ def reject_refund(
         raise HTTPException(403, "Another manager must handle your refund")
     check_version(order.version, payload.expected_version)
     payment = payment_for(db, order, payment_id)
+    if payment.merchant_scope == "platform":
+        raise HTTPException(403, "TranscriptsKE administrators handle platform refunds")
     refund = db.scalar(
         select(PaymentRefund).where(PaymentRefund.payment_id == payment.id)
     )
@@ -294,6 +307,7 @@ def reconciliation_queue(
         .join(Order, PaymentAttempt.order_id == Order.id)
         .where(
             Order.institution_id == institution_id,
+            Order.submitted_at.is_not(None),
             Order.payment_status.in_(
                 [
                     "pending",
@@ -561,3 +575,42 @@ async def mpesa_reversal(
     return await run_in_threadpool(
         process_reversal, db, str(refund_id), payload, timeout
     )
+
+
+@router.get(OWN + "/{payment_id}/card-checkout")
+def embedded_card_checkout(
+    request: Request,
+    response: Response,
+    order_id: Id,
+    payment_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+    gateway=Depends(get_gateways),
+):
+    enforce_rate_limit(
+        db, request, "card_checkout", str(user.id), account_limit=60, ip_limit=180
+    )
+    order = get_order(db, user, order_id)
+    payment = payment_for(db, order, payment_id)
+    if (
+        payment.provider != "stripe"
+        or payment.request_data.get("ui_mode") != "embedded"
+        or payment.status != "pending"
+        or not payment.provider_reference
+    ):
+        raise HTTPException(
+            409, "Secure card fields are available only for an open card checkout"
+        )
+    provider_available(payment)
+    if not settings.STRIPE_PUBLISHABLE_KEY:
+        raise HTTPException(503, "Secure card checkout is not configured")
+    try:
+        secret = gateway.card_checkout(payment)
+    except GatewayUnavailable as exc:
+        raise HTTPException(
+            503,
+            "Secure card fields could not be loaded. Check payment status before trying again.",
+        ) from exc
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return {"publishable_key": settings.STRIPE_PUBLISHABLE_KEY, "client_secret": secret}
