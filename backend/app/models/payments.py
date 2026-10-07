@@ -40,6 +40,9 @@ class PaymentAttempt(Base):
     active_order_id: Mapped[int | None] = mapped_column(
         ForeignKey("orders.id"), unique=True
     )
+    merchant_scope: Mapped[str] = mapped_column(
+        String(20), default="institution", server_default="institution"
+    )
     provider: Mapped[str] = mapped_column(String(20))
     mode: Mapped[str] = mapped_column(String(10))
     account_fingerprint: Mapped[str] = mapped_column(String(64))
