@@ -35,10 +35,15 @@ class Settings(BaseSettings):
     OPERATIONS_NOTIFICATION_PENDING_MINUTES: int = Field(default=15, ge=5, le=1440)
     OPERATIONS_WORKER_STALE_MINUTES: int = Field(default=15, ge=5, le=1440)
 
+    PAYMENT_COLLECTION_POLICY: Literal["before_review", "after_review"] = (
+        "before_review"
+    )
     PAYMENTS_ENABLED: bool = False
     PAYMENT_MODE: Literal["test", "live"] = "test"
+    PAYMENT_ROUTING_MODE: Literal["platform", "pilot"] = "platform"
     PAYMENT_INSTITUTION_ID: int | None = Field(default=None, ge=1)
     PAYMENT_PUBLIC_URL: str = "http://127.0.0.1:8000"
+    STRIPE_PUBLISHABLE_KEY: str | None = None
     STRIPE_SECRET_KEY: str | None = None
     STRIPE_WEBHOOK_SECRET: str | None = None
     MPESA_CONSUMER_KEY: str | None = None
@@ -85,7 +90,7 @@ class Settings(BaseSettings):
             from urllib.parse import urlsplit
 
             url = urlsplit(self.PAYMENT_PUBLIC_URL)
-            if not self.PAYMENT_INSTITUTION_ID:
+            if self.PAYMENT_ROUTING_MODE == "pilot" and not self.PAYMENT_INSTITUTION_ID:
                 raise ValueError(
                     "Set PAYMENT_INSTITUTION_ID for the authorized pilot merchant"
                 )
@@ -107,6 +112,13 @@ class Settings(BaseSettings):
                 "sk_live_" if self.PAYMENT_MODE == "live" else "sk_test_"
             ):
                 raise ValueError("Stripe key must match PAYMENT_MODE")
+            if (
+                self.STRIPE_PUBLISHABLE_KEY
+                and not self.STRIPE_PUBLISHABLE_KEY.startswith(
+                    "pk_live_" if self.PAYMENT_MODE == "live" else "pk_test_"
+                )
+            ):
+                raise ValueError("Card publishable key must match PAYMENT_MODE")
             if self.APP_ENV == "production" and self.PAYMENT_MODE != "live":
                 raise ValueError("Production payments must use live credentials")
         if self.MAIL_BACKEND == "smtp" and not self.SMTP_HOST:
