@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -44,17 +44,29 @@ def create_access_token(subject: str, token_version: int = 0) -> str:
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     error = HTTPException(
         401, "Could not validate credentials", headers={"WWW-Authenticate": "Bearer"}
     )
-    if credentials is None:
+    token = (
+        credentials.credentials
+        if credentials
+        else request.cookies.get("transcriptske_session")
+    )
+    if not token:
         raise error
+    if credentials is None and request.method not in ("GET", "HEAD", "OPTIONS"):
+        from urllib.parse import urlsplit
+
+        origin = urlsplit(request.headers.get("origin", ""))
+        if origin.scheme != request.url.scheme or origin.netloc != request.url.netloc:
+            raise HTTPException(403, "A same-origin request is required")
     try:
         payload = jwt.decode(
-            credentials.credentials,
+            token,
             settings.SECRET_KEY,
             algorithms=[ALGORITHM],
             options={"require_exp": True, "require_sub": True, "require_iat": True},
