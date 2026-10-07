@@ -6,7 +6,7 @@ from app.models.fulfillment import OrderHold, RegistrarCase, RegistrarEvent
 from app.models.institution import Institution
 from app.models.orders import OrderConsent, OrderItem, OrderMessage, OrderQuote
 from app.services.academic import check_version
-from app.services.orders import digest, event, get_order, rows
+from app.services.orders import digest, event, get_order, record_review_scope, rows
 
 
 def case_for(db, order):
@@ -89,7 +89,12 @@ def preparation_blockers(db, order, *, include_deferred=True):
         not link
         or link.status != "matched"
         or link.user_id != order.user_id
-        or link.version != snapshot.get("academic_record", {}).get("version")
+        or (
+            record_review_scope(link)
+            != snapshot.get("academic_record", {}).get("review_scope")
+            if order.collection_policy == "before_review"
+            else link.version != snapshot.get("academic_record", {}).get("version")
+        )
     ):
         blockers.append(
             "The academic record match has changed; a new authorized order is required."
