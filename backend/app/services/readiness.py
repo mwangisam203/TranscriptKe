@@ -141,16 +141,39 @@ def report(db, *, live=False):
                 ),
                 "Outstanding payments must retain their original provider account and mode; investigate configuration changes before reconciliation.",
             )
+            if settings.PAYMENT_ROUTING_MODE == "platform":
+                from app.models.billing import InstitutionBilling
+
+                collection_schools = db.scalar(
+                    select(func.count())
+                    .select_from(InstitutionBilling)
+                    .join(Institution)
+                    .where(
+                        InstitutionBilling.enabled.is_(True),
+                        Institution.is_active.is_(True),
+                        Institution.is_approved.is_(True),
+                    )
+                )
+                add(
+                    "platform_collection",
+                    bool(collection_schools),
+                    "Enable platform collection for at least one participating school.",
+                )
             institution = (
                 db.get(Institution, settings.PAYMENT_INSTITUTION_ID)
                 if settings.PAYMENT_INSTITUTION_ID
                 else None
             )
-            add(
-                "pilot_institution",
-                bool(institution and institution.is_active and institution.is_approved),
-                "The configured payment pilot institution must be active and approved.",
-            )
+            if settings.PAYMENT_ROUTING_MODE == "pilot":
+                add(
+                    "pilot_institution",
+                    bool(
+                        institution
+                        and institution.is_active
+                        and institution.is_approved
+                    ),
+                    "The configured payment pilot institution must be active and approved.",
+                )
         outstanding_deliveries = db.scalar(
             select(func.count(DocumentDelivery.id))
             .join(IssuedDocument)
