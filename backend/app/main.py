@@ -16,7 +16,10 @@ from app.api.v1.operations import router as operations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.pilot import router as pilot_router
+from app.api.v1.platform_finance import router as platform_finance_router
+from app.api.v1.profiles import router as profiles_router
 from app.api.v1.staff import router as staff_router
+from app.api.v1.workspace_drafts import router as workspace_drafts_router
 from app.core.config import settings
 from app.db.session import get_db
 from app.services.order_attachments import AttachmentBodyLimit
@@ -47,6 +50,8 @@ async def safe_validation_errors(request: Request, exc: RequestValidationError):
 
 
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(profiles_router, prefix="/api/v1")
+app.include_router(workspace_drafts_router, prefix="/api/v1")
 app.include_router(institutions_router, prefix="/api/v1")
 app.include_router(staff_router, prefix="/api/v1")
 app.include_router(catalog_router, prefix="/api/v1")
@@ -54,6 +59,7 @@ app.include_router(academic_records_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(fulfillment_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
+app.include_router(platform_finance_router, prefix="/api/v1")
 app.include_router(issuance_router, prefix="/api/v1")
 app.include_router(operations_router, prefix="/api/v1")
 app.include_router(pilot_router, prefix="/api/v1")
@@ -85,6 +91,11 @@ async def private_api_responses(request: Request, call_next):
     return response
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(STATIC_DIRECTORY / "favicon.svg", media_type="image/svg+xml")
+
+
 @app.get("/workspace", include_in_schema=False)
 def workspace():
     mail_hint = ""
@@ -100,7 +111,7 @@ def workspace():
         content.replace("<!-- development-mail-hint -->", mail_hint),
         headers={
             "Cache-Control": "no-store",
-            "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+            "Content-Security-Policy": "default-src 'self'; script-src 'self' https://js.stripe.com https://*.js.stripe.com https://checkout.stripe.com; style-src 'self'; connect-src 'self' https://api.stripe.com https://checkout.stripe.com; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://checkout.stripe.com; img-src 'self' https://*.stripe.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff",
         },
