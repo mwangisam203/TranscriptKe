@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.academic import InstitutionService, OrderingPolicy
 from app.models.access import AccessEvent
+from app.models.billing import InstitutionBilling
 from app.models.institution import Institution
 from app.models.user import User, UserRole
 from app.schemas.auth import EmailRequest
@@ -18,6 +19,14 @@ from app.services.mail import Mailer
 DEVELOPMENT_INSTITUTIONS = (
     ("DEMO-UNI", "Demo Kenya University (development only)"),
     ("DEMO-TVET", "Demo Kenya Technical College (development only)"),
+    ("DEMO-LAKEVIEW", "Demo Lakeview University (development only)"),
+    ("DEMO-HIGHLAND", "Demo Highland University (development only)"),
+    ("DEMO-COAST", "Demo Coast Technical College (development only)"),
+    ("DEMO-RIVER", "Demo Riverbend College (development only)"),
+    ("DEMO-SAVANNAH", "Demo Savannah University (development only)"),
+    ("DEMO-GREENFIELD", "Demo Greenfield Polytechnic (development only)"),
+    ("DEMO-SUNRISE", "Demo Sunrise College (development only)"),
+    ("DEMO-VALLEY", "Demo Valley Institute of Technology (development only)"),
 )
 
 
@@ -48,13 +57,15 @@ def seed_academic_demo(db: Session) -> None:
     seed_institutions(db)
     for code, _ in DEVELOPMENT_INSTITUTIONS:
         institution = db.scalar(select(Institution).where(Institution.code == code))
+        if db.get(InstitutionBilling, institution.id) is None:
+            db.add(InstitutionBilling(institution_id=institution.id, enabled=True))
         if db.get(OrderingPolicy, institution.id) is None:
             db.add(
                 OrderingPolicy(
                     institution_id=institution.id,
                     accepting_requests=True,
                     required_fields=["program", "attendance_start_year"],
-                    student_instructions="Demo only: provide your admission number, name on record, program and first attendance year. No real academic records are connected.",
+                    student_instructions="Demo only: provide your admission number or ID/passport, name on record, program and attendance start month and year. No real academic records are connected.",
                 )
             )
         if (
@@ -72,8 +83,8 @@ def seed_academic_demo(db: Session) -> None:
                     code="DEMO-TRANSCRIPT",
                     name="Official transcript (demo)",
                     document_type="official_transcript",
-                    description="Fictional service and sample fee for development. No payment is collected.",
-                    fee_minor=150000,
+                    description="Fictional service and sample fee for development. Use test checkout only.",
+                    fee_minor=500,
                     currency="KES",
                     processing_days_min=3,
                     processing_days_max=7,
