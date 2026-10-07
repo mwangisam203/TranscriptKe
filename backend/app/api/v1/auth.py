@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ from app.schemas.auth import (
     UserRegister,
 )
 from app.services.mail import Mailer, get_mailer
+from app.services.profiles import create_profile
 from app.services.throttle import enforce_rate_limit
 from app.services.tokens import (
     consume_token,
@@ -66,6 +67,8 @@ def register_user(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "A user with this email already exists") from exc
+    if payload.profile is not None:
+        create_profile(db, user, payload.profile)
     issue_token(
         db,
         mailer,
@@ -80,7 +83,18 @@ def register_user(
 
 
 @router.post("/login", response_model=Token)
-def login_user(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
+def login_user(
+    payload: UserLogin,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    from urllib.parse import urlsplit
+
+    if request.headers.get("origin"):
+        origin = urlsplit(request.headers["origin"])
+        if origin.scheme != request.url.scheme or origin.netloc != request.url.netloc:
+            raise HTTPException(403, "A same-origin request is required")
     enforce_rate_limit(db, request, "login", payload.email)
     user = db.scalar(select(User).where(User.email == payload.email))
     correct = verify_password(
@@ -92,7 +106,26 @@ def login_user(payload: UserLogin, request: Request, db: Session = Depends(get_d
         )
     if not user.is_email_verified:
         raise HTTPException(403, "Verify your email before signing in")
-    return Token(access_token=create_access_token(str(user.id), user.token_version))
+    token = create_access_token(str(user.id), user.token_version)
+    response.set_cookie(
+        "transcriptske_session",
+        token,
+        httponly=True,
+        secure=settings.APP_ENV == "production" or request.url.scheme == "https",
+        samesite="strict",
+        path="/api/v1",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    return Token(access_token=token)
+
+
+@router.get("/session", response_model=Token)
+def restore_session(request: Request, user: User = Depends(get_current_user)):
+    # Return the existing token without extending its expiry. It remains in JS memory.
+    return Token(
+        access_token=request.headers.get("authorization", "").removeprefix("Bearer ")
+        or request.cookies.get("transcriptske_session")
+    )
 
 
 @router.get("/me", response_model=UserRead)
@@ -209,7 +242,9 @@ def change_password(
 
 @router.post("/logout", response_model=Message)
 def logout_all(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     user = db.scalar(
         select(User)
@@ -219,4 +254,5 @@ def logout_all(
     )
     user.token_version += 1
     db.commit()
+    response.delete_cookie("transcriptske_session", path="/api/v1")
     return Message(message="Signed out on all devices.")
