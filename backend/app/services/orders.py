@@ -25,7 +25,7 @@ from app.schemas.orders import AttachmentRead, CancellationRead, DraftInput, Ord
 from app.services.academic import check_version
 from app.services.order_timing import planning_target
 
-CONSENT_VERSION = "2026-09-v1"
+CONSENT_VERSION = "2026-10-v2"
 CONSENT_TEXT = (
     "I authorize the institution shown in this order to release the selected academic "
     "documents and supporting attachments to the named recipients for the stated purpose, "
@@ -106,7 +106,7 @@ def event(db, order, actor_id, kind, message, *, bump=True):
 
 
 def recipient_data(recipient):
-    return {
+    data = {
         name: getattr(recipient, name)
         for name in (
             "key",
@@ -118,6 +118,10 @@ def recipient_data(recipient):
             "application_reference",
         )
     }
+    # Preserve legacy quote snapshots and consent hashes for unclassified recipients.
+    if recipient.destination_type != "other":
+        data["destination_type"] = recipient.destination_type
+    return data
 
 
 def item_data(item):
@@ -153,6 +157,7 @@ def read_order(db, order):
         institution_id=order.institution_id,
         academic_record_link_id=order.academic_record_link_id,
         status=order.status,
+        collection_policy=order.collection_policy,
         payment_status=order.payment_status,
         version=order.version,
         **data,
@@ -223,7 +228,12 @@ def build_snapshot(db, order):
         link is None
         or link.user_id != order.user_id
         or link.institution_id != order.institution_id
-        or link.status != "matched"
+        or link.status
+        not in (
+            ("pending", "matched")
+            if order.collection_policy == "before_review"
+            else ("matched",)
+        )
     ):
         problems.append("A confirmed academic record belonging to you is required.")
     if not order.purpose:
@@ -256,7 +266,14 @@ def build_snapshot(db, order):
         required = set(service.required_fields) | set(
             policy.required_fields if policy else []
         )
-        if link and any(getattr(link, field) is None for field in required):
+        if link and any(
+            (
+                len(link.identity_images) != 2
+                if field == "identity_images"
+                else getattr(link, field) is None
+            )
+            for field in required
+        ):
             problems.append(
                 "The confirmed academic record is missing information now required by the institution."
             )
@@ -297,6 +314,11 @@ def build_snapshot(db, order):
                 else {}
             ),
             "program": link.program,
+            **(
+                {"review_scope": record_review_scope(link)}
+                if order.collection_policy == "before_review"
+                else {}
+            ),
         },
         "policy_version": policy.version,
         "purpose": order.purpose,
@@ -379,25 +401,65 @@ def submit_order(db, order, user, payload, key):
         consent is None
         or consent.scope_hash != quote.scope_hash
         or consent.text_version != CONSENT_VERSION
+        or not consent.signature_ciphertext
     ):
         raise HTTPException(
             422, "Consent to this exact quote and recipient scope is required"
         )
-    order.status = "submitted"
     order.submitted_snapshot = quote.snapshot
-    order.submitted_at = utcnow()
-    order.processing_due_at = planning_target(order.submitted_at, quote.snapshot)
     order.submission_key = key
     order.submission_quote_id = quote.id
     order.submission_consent_id = consent.id
+    if order.collection_policy == "before_review" and quote.total_minor > 0:
+        order.status = "awaiting_payment"
+        event(
+            db,
+            order,
+            user.id,
+            "checkout_authorized",
+            "Checkout authorized. The institution receives this order only after confirmed payment.",
+        )
+    else:
+        release_order(db, order, user.id)
+
+
+def record_review_scope(link):
+    from app.services.academic import submission_snapshot
+
+    return digest(
+        {
+            "details": submission_snapshot(link),
+            "identity": link.identity_fingerprint,
+            "images": [
+                hashlib.sha256(image.ciphertext).hexdigest()
+                for image in sorted(link.identity_images, key=lambda image: image.side)
+            ],
+        }
+    )
+
+
+def release_order(db, order, actor_id=None):
+    # Called under the institution/order lock. Repeated callbacks cannot release twice.
+    if order.submitted_at is not None:
+        return
+    order.status = "submitted"
+    order.submitted_at = utcnow()
+    order.processing_due_at = planning_target(
+        order.submitted_at, order.submitted_snapshot
+    )
+    link = db.get(AcademicRecordLink, order.academic_record_link_id)
+    if link:
+        link.checkout_required = False
     for item in rows(db, OrderItem, order.id):
         item.fulfillment_status = "awaiting_review"
     event(
         db,
         order,
-        user.id,
+        actor_id,
         "submitted",
-        "Order submitted to the institution. Payment has not been collected.",
+        "Order sent to the institution after confirmed checkout."
+        if order.collection_policy == "before_review"
+        else "Order submitted to the institution. Payment has not been collected.",
     )
 
 
@@ -407,3 +469,52 @@ def can_cancel(db, order):
         item.fulfillment_status in ("draft", "awaiting_review", "rejected")
         for item in rows(db, OrderItem, order.id)
     )
+
+
+def delete_unfinished_order(db, user, order_id, version):
+    from app.models.access import AccessEvent
+    from app.models.payments import PaymentAttempt
+    from app.models.workspace_draft import WorkspaceDraft
+
+    # Match recovery-write lock order, preventing a concurrent save from restoring a deleted draft.
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
+    order = get_order(db, user, order_id, lock=True)
+    check_version(order.version, version)
+    if (
+        order.status != "draft"
+        or order.submitted_at
+        or order.submitted_snapshot
+        or db.scalar(
+            select(PaymentAttempt.id)
+            .where(PaymentAttempt.order_id == order.id)
+            .limit(1)
+        )
+    ):
+        raise HTTPException(
+            409,
+            "Only unfinished drafts can be deleted. Pending and submitted orders are permanent records.",
+        )
+    db.add(
+        AccessEvent(
+            actor_id=user.id,
+            institution_id=order.institution_id,
+            action="unfinished_order_deleted",
+            details={"order_reference": order.reference},
+        )
+    )
+    db.execute(
+        delete(WorkspaceDraft).where(
+            WorkspaceDraft.user_id == user.id, WorkspaceDraft.key == f"order-{order.id}"
+        )
+    )
+    for model in (
+        OrderConsent,
+        OrderQuote,
+        OrderAttachment,
+        OrderItem,
+        OrderRecipient,
+        OrderEvent,
+    ):
+        db.execute(delete(model).where(model.order_id == order.id))
+    db.delete(order)
+    db.commit()
