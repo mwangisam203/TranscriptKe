@@ -2,6 +2,7 @@ from app.models.academic import (
     AcademicRecordLink,
     InstitutionService,
     OrderingPolicy,
+    RecordIdentityImage,
     RecordMatchEvent,
 )
 from app.models.access import (
@@ -38,9 +39,13 @@ from app.models.payments import (
     PaymentWebhook,
 )
 from app.models.pilot import InstitutionOnboarding, PilotEvaluation
+from app.models.profile import UserProfile
 from app.models.user import User, UserRole
+from app.models.workspace_draft import WorkspaceDraft
 
 __all__ = [
+    "WorkspaceDraft",
+    "UserProfile",
     "InstitutionOnboarding",
     "PilotEvaluation",
     "OperationsCase",
@@ -68,6 +73,7 @@ __all__ = [
     "InstitutionService",
     "OrderingPolicy",
     "RecordMatchEvent",
+    "RecordIdentityImage",
     "AccessEvent",
     "ActionToken",
     "AuthRateLimit",
@@ -77,3 +83,4 @@ __all__ = [
     "User",
     "UserRole",
 ]
+from app.models.billing import InstitutionBilling  # noqa: F401
