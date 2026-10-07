@@ -9,12 +9,13 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -38,6 +39,7 @@ class MatchingField(StrEnum):
     ATTENDANCE_START_YEAR = "attendance_start_year"
     ATTENDANCE_END_YEAR = "attendance_end_year"
     PREVIOUS_NAMES = "previous_names"
+    IDENTITY_IMAGES = "identity_images"
 
 
 class MatchStatus(StrEnum):
@@ -143,12 +145,19 @@ class AcademicRecordLink(Base):
     admission_number: Mapped[str | None] = mapped_column(String(100))
     identity_ciphertext: Mapped[str | None] = mapped_column(Text)
     identity_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    id_number_type: Mapped[str | None] = mapped_column(String(20))
     identity_masked: Mapped[str | None] = mapped_column(String(10))
+    currently_enrolled: Mapped[bool | None] = mapped_column(Boolean)
     name_on_record: Mapped[str] = mapped_column(String(255))
     program: Mapped[str | None] = mapped_column(String(255))
     attendance_start_year: Mapped[int | None] = mapped_column(Integer)
     attendance_end_year: Mapped[int | None] = mapped_column(Integer)
+    attendance_start_month: Mapped[int | None] = mapped_column(Integer)
+    attendance_end_month: Mapped[int | None] = mapped_column(Integer)
     previous_names: Mapped[list[str]] = mapped_column(JSON, default=list)
+    checkout_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     requirements_snapshot: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(30), default=MatchStatus.PENDING.value)
     student_message: Mapped[str | None] = mapped_column(Text)
@@ -158,6 +167,39 @@ class AcademicRecordLink(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    identity_images: Mapped[list["RecordIdentityImage"]] = relationship(
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="RecordIdentityImage.side",
+    )
+
+    @property
+    def identity_document_type(self):
+        return self.identity_images[0].document_type if self.identity_images else None
+
+
+class RecordIdentityImage(Base):
+    __tablename__ = "record_identity_images"
+    __table_args__ = (
+        UniqueConstraint("link_id", "side", name="uq_identity_image_side"),
+        CheckConstraint("side IN ('front', 'back')", name="ck_identity_image_side"),
+        CheckConstraint(
+            "document_type IN ('national_id', 'driving_licence')",
+            name="ck_identity_image_type",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    link_id: Mapped[int] = mapped_column(
+        ForeignKey("academic_record_links.id"), index=True
+    )
+    document_type: Mapped[str] = mapped_column(String(30))
+    side: Mapped[str] = mapped_column(String(10))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
