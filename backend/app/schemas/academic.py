@@ -38,7 +38,7 @@ class ServiceWrite(StrictInput):
     processing_days_min: int = Field(ge=0, le=365)
     processing_days_max: int = Field(ge=0, le=365)
     delivery_methods: list[DeliveryMethod] = Field(min_length=1, max_length=3)
-    required_fields: list[MatchingField] = Field(default_factory=list, max_length=4)
+    required_fields: list[MatchingField] = Field(default_factory=list, max_length=5)
     is_active: bool = True
 
     @model_validator(mode="after")
@@ -68,7 +68,7 @@ class PolicyWrite(StrictInput):
     expected_version: int = Field(ge=0)
     accepting_requests: bool
     student_instructions: str = Field(default="", max_length=4000)
-    required_fields: list[MatchingField] = Field(default_factory=list, max_length=4)
+    required_fields: list[MatchingField] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def unique_fields(self):
@@ -95,6 +95,8 @@ class ApprovalWrite(StrictInput):
 
 
 class RecordSubmission(StrictInput):
+    id_number_type: Literal["national_id", "passport"] = "national_id"
+    identity_document_type: Literal["national_id", "driving_licence"] | None = None
     service_id: Id
     admission_number: RecordIdentifier | None = None
     id_number: (
@@ -105,19 +107,53 @@ class RecordSubmission(StrictInput):
         ]
         | None
     ) = None
+    currently_enrolled: bool | None = Field(default=None, strict=True)
     name_on_record: ShortText
     program: ShortText | None = None
     attendance_start_year: int | None = Field(default=None, ge=1900)
     attendance_end_year: int | None = Field(default=None, ge=1900)
+    attendance_start_month: int | None = Field(default=None, ge=1, le=12, strict=True)
+    attendance_end_month: int | None = Field(default=None, ge=1, le=12, strict=True)
     previous_names: list[ShortText] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def validate_attendance(self):
+        if self.id_number and self.id_number_type == "national_id":
+            import re
+
+            if not re.fullmatch(r"[0-9]{7,8}", self.id_number):
+                raise ValueError("National ID must contain 7 or 8 digits")
         if not self.admission_number and not self.id_number:
             raise ValueError(
                 "Provide an admission number or a National ID/passport number for institutional review"
             )
-        current_year = datetime.now(timezone.utc).year
+        if self.currently_enrolled is True and (
+            self.attendance_end_year is not None
+            or self.attendance_end_month is not None
+        ):
+            raise ValueError(
+                "Currently enrolled students must leave the end date blank"
+            )
+        if self.currently_enrolled is False and (
+            self.attendance_end_year is None or self.attendance_end_month is None
+        ):
+            raise ValueError("Provide the month and year you graduated or left")
+        now = datetime.now(timezone.utc)
+        current_year = now.year
+        for side in ("start", "end"):
+            month = getattr(self, f"attendance_{side}_month")
+            year = getattr(self, f"attendance_{side}_year")
+            if (month is None) != (year is None):
+                raise ValueError("Provide both month and year for each attendance date")
+            if month is not None and year == current_year and month > now.month:
+                raise ValueError("Attendance dates cannot be in the future")
+        if (
+            self.attendance_start_year == self.attendance_end_year
+            and self.attendance_start_month is not None
+            and self.attendance_end_month is not None
+            and self.attendance_end_month < self.attendance_start_month
+        ):
+            raise ValueError("Attendance end month cannot precede the start month")
         if any(
             year is not None and year > current_year
             for year in [self.attendance_start_year, self.attendance_end_year]
@@ -173,17 +209,32 @@ class MatchDecision(StrictInput):
         return self
 
 
+class IdentityImageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    side: Literal["front", "back"]
+    document_type: Literal["national_id", "driving_licence"]
+    size_bytes: int
+    created_at: datetime
+
+
 class RecordRead(BaseModel):
+    checkout_required: bool = False
     model_config = ConfigDict(from_attributes=True)
     id: int
     institution_id: int
     service_id: int
     admission_number: str | None
+    id_number_type: Literal["national_id", "passport"] | None
     identity_masked: str | None
+    identity_document_type: Literal["national_id", "driving_licence"] | None
+    identity_images: list[IdentityImageRead]
     name_on_record: str
+    currently_enrolled: bool | None
     program: str | None
     attendance_start_year: int | None
     attendance_end_year: int | None
+    attendance_start_month: int | None
+    attendance_end_month: int | None
     previous_names: list[str]
     requirements_snapshot: dict
     status: MatchStatus
