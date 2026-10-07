@@ -26,9 +26,9 @@ class GatewayRejected(Exception):
 
 
 def configured(provider, *, collection=True):
-    if (
-        collection and not settings.PAYMENTS_ENABLED
-    ) or not settings.PAYMENT_INSTITUTION_ID:
+    if (collection and not settings.PAYMENTS_ENABLED) or (
+        settings.PAYMENT_ROUTING_MODE == "pilot" and not settings.PAYMENT_INSTITUTION_ID
+    ):
         return False
     if provider == "stripe":
         return bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_WEBHOOK_SECRET)
@@ -191,6 +191,8 @@ class Gateways:
             )
             if not isinstance(data.get("id"), str) or not data["id"].startswith("cs_"):
                 raise GatewayUnavailable
+            if payment.request_data.get("ui_mode") == "embedded":
+                return {"reference": data["id"], "checkout_url": None}
             url = urlsplit(data.get("url") or "")
             if (
                 url.scheme != "https"
@@ -210,6 +212,26 @@ class Gateways:
         if not isinstance(reference, str) or not 1 <= len(reference) <= 150:
             raise GatewayUnavailable
         return {"reference": reference, "checkout_url": None}
+
+    def card_checkout(self, payment):
+        data = self.stripe("GET", "checkout/sessions/" + payment.provider_reference)
+        if (
+            data.get("id") != payment.provider_reference
+            or data.get("client_reference_id") != payment.id
+            or not isinstance(data.get("metadata"), dict)
+            or data["metadata"].get("payment_id") != payment.id
+            or data.get("amount_total") != payment.amount_minor
+            or data.get("currency") != payment.currency.lower()
+            or data.get("livemode") is not (payment.mode == "live")
+            or data.get("status") != "open"
+            or data.get("ui_mode") != "embedded"
+            or not isinstance(data.get("client_secret"), str)
+            or not data["client_secret"].startswith(
+                payment.provider_reference + "_secret_"
+            )
+        ):
+            raise GatewayUnavailable
+        return data["client_secret"]
 
     def observe(self, payment):
         try:
@@ -234,7 +256,10 @@ class Gateways:
                     "transaction_reference": payment.transaction_reference,
                     "refunded_minor": payment.refunded_minor,
                 }
-            if code in {"1", "1032", "2001"}:
+            # A correlated final STK result is distinct from an HTTP/network timeout.
+            if code == "1019":
+                return {"status": "expired", "refunded_minor": 0}
+            if code in {"1", "1025", "1032", "1037", "2001", "9999"}:
                 return {"status": "failed", "refunded_minor": 0}
             return {"status": "pending", "refunded_minor": 0}
         data = self.stripe(
@@ -372,3 +397,20 @@ class PaymentAccessLogFilter(logging.Filter):
                 args[2] = args[2].split("?", 1)[0]
                 record.args = tuple(args)
         return True
+
+
+def institution_collection_enabled(db, institution_id):
+    if settings.PAYMENT_ROUTING_MODE == "pilot":
+        return institution_id == settings.PAYMENT_INSTITUTION_ID
+    from app.models.billing import InstitutionBilling
+    from app.models.institution import Institution
+
+    institution = db.get(Institution, institution_id)
+    billing = db.get(InstitutionBilling, institution_id)
+    return bool(
+        institution
+        and institution.is_active
+        and institution.is_approved
+        and billing
+        and billing.enabled
+    )
