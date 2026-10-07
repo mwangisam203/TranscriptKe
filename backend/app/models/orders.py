@@ -29,7 +29,7 @@ class Order(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "creation_key", name="uq_order_user_creation_key"),
         CheckConstraint(
-            "status IN ('draft','submitted','cancellation_requested','cancelled')",
+            "status IN ('draft','awaiting_payment','submitted','cancellation_requested','cancelled')",
             name="ck_order_status",
         ),
         CheckConstraint("version >= 1", name="ck_order_version"),
@@ -51,6 +51,9 @@ class Order(Base):
     release_when: Mapped[str] = mapped_column(String(30), default="now")
     release_instruction: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(30), default="draft")
+    collection_policy: Mapped[str] = mapped_column(
+        String(20), default="after_review", server_default="after_review"
+    )
     payment_status: Mapped[str] = mapped_column(String(30), default="not_started")
     version: Mapped[int] = mapped_column(Integer, default=1)
     submitted_snapshot: Mapped[dict | None] = mapped_column(JSON)
@@ -69,12 +72,19 @@ class OrderRecipient(Base):
     __tablename__ = "order_recipients"
     __table_args__ = (
         UniqueConstraint("order_id", "key", name="uq_order_recipient_key"),
+        CheckConstraint(
+            "destination_type IN ('self', 'institution', 'other')",
+            name="ck_recipient_destination_type",
+        ),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     key: Mapped[str] = mapped_column(String(40))
     name: Mapped[str] = mapped_column(String(255))
     organization: Mapped[str] = mapped_column(String(255), default="")
+    destination_type: Mapped[str] = mapped_column(
+        String(20), default="other", server_default="other"
+    )
     email: Mapped[str | None] = mapped_column(String(255))
     delivery_method: Mapped[str] = mapped_column(String(30))
     postal_address: Mapped[dict | None] = mapped_column(JSON)
@@ -141,6 +151,7 @@ class OrderConsent(Base):
     text_version: Mapped[str] = mapped_column(String(30))
     text: Mapped[str] = mapped_column(Text)
     scope_hash: Mapped[str] = mapped_column(String(64))
+    signature_ciphertext: Mapped[str | None] = mapped_column(Text)
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
