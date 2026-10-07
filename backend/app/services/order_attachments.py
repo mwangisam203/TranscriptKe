@@ -84,10 +84,16 @@ class AttachmentBodyLimit:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        identity_upload = scope.get("path", "").endswith(
+            ("/academic-record-submissions", "/resubmissions-with-images")
+        )
         if (
             scope["type"] != "http"
             or scope.get("method") != "POST"
-            or not scope.get("path", "").endswith(("/attachments", "/documents"))
+            or (
+                not identity_upload
+                and not scope.get("path", "").endswith(("/attachments", "/documents"))
+            )
         ):
             return await self.app(scope, receive, send)
         consumed = 0
@@ -96,8 +102,10 @@ class AttachmentBodyLimit:
             nonlocal consumed
             message = await receive()
             consumed += len(message.get("body", b""))
-            if consumed > MAX_ATTACHMENT_BYTES + 65536:
-                raise HTTPException(413, "Attachment upload exceeds the 2 MiB limit")
+            if consumed > MAX_ATTACHMENT_BYTES * (2 if identity_upload else 1) + 65536:
+                raise HTTPException(
+                    413, "Upload exceeds the allowed image/file size limit"
+                )
             return message
 
         await self.app(scope, limited_receive, send)
