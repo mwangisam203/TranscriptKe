@@ -14,11 +14,15 @@ from app.schemas.academic import RecordSubmission
 
 SUBMISSION_FIELDS = (
     "service_id",
+    "id_number_type",
     "admission_number",
     "name_on_record",
+    "currently_enrolled",
     "program",
     "attendance_start_year",
     "attendance_end_year",
+    "attendance_start_month",
+    "attendance_end_month",
     "previous_names",
 )
 
@@ -49,7 +53,11 @@ def check_version(actual: int, expected: int) -> None:
 
 
 def validate_submission(
-    db: Session, institution_id: int, payload: RecordSubmission
+    db: Session,
+    institution_id: int,
+    payload: RecordSubmission,
+    *,
+    has_identity_images: bool = False,
 ) -> dict:
     institution = lock_institution(db, institution_id)
     if not institution.is_approved:
@@ -72,7 +80,10 @@ def validate_submission(
     missing = []
     for field in required:
         # An explicit [] means the student has no previous names; omission is different.
-        if field == "previous_names":
+        if field == "identity_images":
+            if not has_identity_images:
+                missing.append(field)
+        elif field == "previous_names":
             if field not in payload.model_fields_set:
                 missing.append(field)
         elif getattr(payload, field) is None:
@@ -95,6 +106,16 @@ def submission_snapshot(link: AcademicRecordLink) -> dict:
         **{field: getattr(link, field) for field in SUBMISSION_FIELDS},
         "requirements": link.requirements_snapshot,
         "identity_masked": link.identity_masked,
+        **(
+            {
+                "identity_document_type": link.identity_document_type,
+                "identity_image_sides": sorted(
+                    image.side for image in link.identity_images
+                ),
+            }
+            if link.identity_images
+            else {}
+        ),
     }
 
 
