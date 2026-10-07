@@ -22,6 +22,7 @@ from app.services.payment_gateways import (
     callback_url,
     configured,
     fingerprint,
+    institution_collection_enabled,
 )
 
 OPEN = {"initiating", "pending", "unknown"}
@@ -71,12 +72,15 @@ def public_payment(db, payment):
     return {
         "id": payment.id,
         "provider": payment.provider,
+        "merchant_scope": payment.merchant_scope,
         "mode": payment.mode,
         "amount_minor": payment.amount_minor,
         "currency": payment.currency,
         "status": payment.status,
         "refunded_minor": payment.refunded_minor,
         "checkout_url": payment.checkout_url if payment.status == "pending" else None,
+        "embedded_card": payment.provider == "stripe"
+        and payment.request_data.get("ui_mode") == "embedded",
         "phone_hint": "…" + payment.phone[-4:] if payment.phone else None,
         "created_at": payment.created_at,
         "paid_at": payment.paid_at,
@@ -93,12 +97,54 @@ def public_payment(db, payment):
 
 
 def eligibility(db, order):
-    problems = preparation_blockers(db, order, include_deferred=False)
-    items = rows(db, OrderItem, order.id)
-    if not items or any(
-        item.fulfillment_status not in ("processing", "ready") for item in items
-    ):
-        problems.append("The registrar must approve every document before payment.")
+    if order.collection_policy == "before_review":
+        from app.models.academic import AcademicRecordLink
+        from app.models.institution import Institution
+        from app.models.orders import OrderConsent, OrderQuote
+        from app.services.orders import record_review_scope
+
+        problems = []
+        institution = db.get(Institution, order.institution_id)
+        link = db.get(AcademicRecordLink, order.academic_record_link_id)
+        if not institution or not institution.is_active or not institution.is_approved:
+            problems.append("Institution approval is required.")
+        if order.status != "awaiting_payment":
+            problems.append("Authorize checkout before paying.")
+        snapshot = order.submitted_snapshot or {}
+        if (
+            not link
+            or link.status not in ("pending", "matched")
+            or record_review_scope(link)
+            != snapshot.get("academic_record", {}).get("review_scope")
+        ):
+            problems.append("Enrollment details changed. Create a fresh checkout.")
+        consent = (
+            db.get(OrderConsent, order.submission_consent_id)
+            if order.submission_consent_id
+            else None
+        )
+        quote = (
+            db.get(OrderQuote, order.submission_quote_id)
+            if order.submission_quote_id
+            else None
+        )
+        if (
+            not consent
+            or not quote
+            or consent.order_id != order.id
+            or consent.user_id != order.user_id
+            or consent.quote_id != quote.id
+            or consent.scope_hash != digest(snapshot)
+            or quote.scope_hash != consent.scope_hash
+        ):
+            problems.append("Signed consent for this checkout is required.")
+    else:
+        problems = preparation_blockers(db, order, include_deferred=False)
+        items = rows(db, OrderItem, order.id)
+        if not items or any(
+            item.fulfillment_status not in ("processing", "ready") for item in items
+        ):
+            problems.append("The registrar must approve every document before payment.")
     if order.payment_status != "not_started":
         problems.append("An existing payment or refund must be resolved first.")
     if (order.submitted_snapshot or {}).get("total_minor", 0) <= 0:
@@ -118,7 +164,7 @@ def create_attempt(db, user, order, payload, key):
             raise HTTPException(409, "This payment key was used with different details")
         return existing
     check_version(order.version, payload.expected_version)
-    if order.institution_id != settings.PAYMENT_INSTITUTION_ID or not configured(
+    if not institution_collection_enabled(db, order.institution_id) or not configured(
         payload.provider
     ):
         raise HTTPException(
@@ -141,6 +187,9 @@ def create_attempt(db, user, order, payload, key):
         active_order_id=order.id,
         provider=payload.provider,
         mode=settings.PAYMENT_MODE,
+        merchant_scope="platform"
+        if settings.PAYMENT_ROUTING_MODE == "platform"
+        else "institution",
         account_fingerprint=fingerprint(payload.provider),
         idempotency_key=key,
         request_hash=request_hash,
@@ -164,6 +213,12 @@ def create_attempt(db, user, order, payload, key):
             "success_url": origin + "/workspace?payment_return=1",
             "cancel_url": origin + "/workspace?payment_cancel=1",
         }
+        if settings.STRIPE_PUBLISHABLE_KEY:
+            payment.request_data.pop("success_url")
+            payment.request_data.pop("cancel_url")
+            payment.request_data.update(
+                {"ui_mode": "embedded", "redirect_on_completion": "never"}
+            )
     else:
         payment.request_data = {
             "TransactionType": "CustomerPayBillOnline",
@@ -366,6 +421,14 @@ def apply_observation(db, order, payment, observation):
                 refund.status = "succeeded"
                 refund.completed_at = utcnow()
     order.payment_status = aggregate_status(db, order)
+    if (
+        order.collection_policy == "before_review"
+        and order.status == "awaiting_payment"
+        and order.payment_status == "paid"
+    ):
+        from app.services.orders import release_order
+
+        release_order(db, order)
     if previous != (payment.status, payment.refunded_minor):
         log(
             db,
@@ -381,7 +444,13 @@ def reconcile(db, order, payment, gateway):
     if not payment.provider_reference:
         raise HTTPException(
             409,
-            "No provider reference was received. Recover the existing card checkout or ask the institution to investigate; do not start another payment.",
+            "No provider reference was received. Recover the existing card checkout or ask "
+            + (
+                "TranscriptsKE support"
+                if payment.merchant_scope == "platform"
+                else "the institution"
+            )
+            + " to investigate; do not start another payment.",
         )
     if payment.provider_reference:
         try:
@@ -438,6 +507,10 @@ def reconcile(db, order, payment, gateway):
 
 def request_refund(db, order, payment, user, reason, version, *, approve=False):
     check_version(order.version, version)
+    if approve and payment.merchant_scope == "platform":
+        from app.services.platform_finance import require_finance_admin
+
+        require_finance_admin(user)
     from app.models.issuance import IssuedDocument
 
     if db.scalar(
@@ -542,8 +615,17 @@ def finish_refund(db, order, payment, refund, status):
         refund.status = "pending"
 
 
-def dispatch_refund(db, user, institution_id, order_id, payment_id, gateway):
-    order = get_order(db, user, order_id, institution_id=institution_id, lock=True)
+def dispatch_refund(
+    db, user, institution_id, order_id, payment_id, gateway, *, finance=False
+):
+    def refund_order():
+        if finance:
+            from app.services.platform_finance import finance_order
+
+            return finance_order(db, user, order_id, lock=True)
+        return get_order(db, user, order_id, institution_id=institution_id, lock=True)
+
+    order = refund_order()
     payment = payment_for(db, order, payment_id)
     refund = db.scalar(
         select(PaymentRefund)
@@ -567,7 +649,7 @@ def dispatch_refund(db, user, institution_id, order_id, payment_id, gateway):
     try:
         result = gateway.refund(payment, refund)
     except GatewayRejected:
-        order = get_order(db, user, order_id, institution_id=institution_id, lock=True)
+        order = refund_order()
         payment = payment_for(db, order, payment_id)
         db.refresh(refund)
         finish_refund(db, order, payment, refund, "failed")
@@ -575,7 +657,7 @@ def dispatch_refund(db, user, institution_id, order_id, payment_id, gateway):
         return payment
     except GatewayUnavailable:
         return payment  # Unknown outcomes remain reserved and block release and duplicate refunds.
-    order = get_order(db, user, order_id, institution_id=institution_id, lock=True)
+    order = refund_order()
     payment = payment_for(db, order, payment_id)
     refund = db.scalar(
         select(PaymentRefund)
@@ -587,7 +669,7 @@ def dispatch_refund(db, user, institution_id, order_id, payment_id, gateway):
     finish_refund(db, order, payment, refund, result["status"])
     db.commit()
     if payment.provider == "mpesa":
-        order = get_order(db, user, order_id, institution_id=institution_id, lock=True)
+        order = refund_order()
         payment = payment_for(db, order, payment_id)
         db.refresh(refund)
         callbacks = db.scalars(
