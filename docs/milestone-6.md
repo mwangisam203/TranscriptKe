@@ -7,7 +7,7 @@ not invent academic results or generate transcripts from unverified information.
 ## Workflow
 
 1. Submit an order with the recipient email and `secure_electronic` delivery.
-2. The assigned registrar approves the items. Complete payment after approval,
+2. New requests pay at checkout before entering the registrar queue. The assigned registrar verifies the academic record and approves the items. For legacy orders, complete payment after approval,
    clear holds and outstanding questions, confirm any deferred release event,
    and mark every item ready.
 3. Upload one institutional PDF per ordered item. Each upload is at most 2 MiB,
