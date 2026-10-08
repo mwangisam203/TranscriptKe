@@ -175,7 +175,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "institutions",
-        sa.Column("is_approved", sa.Boolean(), server_default=sa.false(), nullable=False),
+        sa.Column(
+            "is_approved", sa.Boolean(), server_default=sa.false(), nullable=False
+        ),
     )
 
 
