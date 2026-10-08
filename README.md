@@ -3,7 +3,7 @@
 TranscriptsKE is a Kenyan academic transcript request and verification platform.
 The current release implements **Milestones 1–8: accounts, institution services, academic matching, ordering,
 registrar review, payments/refunds, secure PDF delivery, pilot operations, and reviewed expansion planning**.
-Stripe-hosted card checkout and M-Pesa STK Push are implemented behind explicit
+Embedded or hosted card checkout and M-Pesa STK Push are implemented behind explicit
 merchant configuration and are disabled by default. Institution-prepared PDF issuance
 and secure recipient delivery are also disabled until configured.
 
@@ -15,14 +15,14 @@ and secure recipient delivery are also disabled until configured.
 - Expiring, single-use action codes stored as hashes; password changes/reset invalidate old sessions.
 - Logout invalidates access tokens on all devices. Access tokens expire after 60 minutes by default.
 - Database-backed rate limits shared across application workers.
-- Public directory of active, approved institutions.
+- Searchable public directory of active, approved institutions and ten fictional development schools.
 - Configurable institution services, KES fees, delivery options, processing times and matching requirements.
 - Student academic record links, manual staff decisions, private evidence and versioned review history.
 - Draft document orders, multiple recipients, exact KES quotes, explicit consent and immutable submissions.
 - Private supporting attachments, order timelines, student/staff messages and cancellation review.
 - Registrar assignment, document review, holds, preparation states and release-condition checks.
-- Payment after registrar approval, Stripe/M-Pesa adapters, authenticated callbacks, receipts and reconciliation.
-- Manager-reviewed full refunds and an append-only charge/refund ledger.
+- Upfront payment for new checkouts, with registrar approval first retained for legacy orders; authenticated callbacks, receipts and reconciliation.
+- TranscriptsKE administrator-reviewed platform refunds and an append-only charge/refund ledger; legacy school-managed refunds remain supported.
 - Scanned institution-prepared PDFs, registrar release attestations and manager revocation.
 - Expiring recipient delivery with single-use email codes, retryable notifications and download history.
 - Institution-scoped manager operations queues, planning targets and audited follow-ups.
@@ -51,7 +51,7 @@ workspace sidebar, live record counts, and the recipient delivery page at `/reci
 To change the design, edit `backend/app/static/workspace.html` and `workspace.css`.
 `interface.js` handles account panels, profile display, record counts and empty states;
 `workspace.js` and the order/payment/issuance modules connect controls to the API.
-All assets are local and the existing content security policy stays in place.
+Workspace assets are local. Secure embedded card checkout loads the provider SDK and frames through a scoped content security policy.
 Refresh the browser after editing; use a hard refresh if cached assets are visible.
 
 With development file email, the sign-in page explains where to find verification
@@ -342,7 +342,7 @@ and [FastAPI testing documentation](https://fastapi.tiangolo.com/tutorial/testin
 
 ## What follows
 
-Milestone 5 adds **Stripe card payments and M-Pesa** after registrar approval.
+Milestone 5 adds **card payments and M-Pesa**. New orders pay before entering the registrar queue; legacy orders retain payment after registrar approval.
 Provider credentials and sandbox acceptance are still required before enabling collection.
 Milestone 6 implements institution-prepared PDFs, release checks, expiring recipient
 delivery, email access codes, and manager revocation. See the [Milestone 6 guide](docs/milestone-6.md)
@@ -445,5 +445,46 @@ Signed-in **Account** contains Change password (current, new, confirmation), plu
 Sign out and reset password. Password changes revoke existing sessions and return
 to sign-in. The existing Forgot password? flow uses an expiring email reset code.
 Clicking the Home/brand link within the signed-in workspace now navigates to My
-records without reloading the page. Tokens remain in memory; a full browser reload
-or a newly opened tab still requires sign-in.
+records without reloading the page. The HttpOnly session cookie restores sign-in
+after a reload without extending the original token expiry. JavaScript keeps the
+restored access token in memory, and global logout invalidates the session.
+
+
+## Continuous checkout and private recovery
+
+The student workflow is personal details, enrollment, documents and destination,
+quote and signed consent, then payment. Select one issuing school by name per
+order and choose delivery to yourself or another institution. Required fields
+carry asterisks, including conditional destination details. Attendance accepts
+typed month/year values; national ID numbers must contain seven or eight digits.
+
+Institutions can require different photographs for the front and back of an ID
+or driving licence. Uploads are validated, cleaned and encrypted; duplicate
+image content is rejected. Institutions perform academic record verification.
+
+Unfinished personal, enrollment and destination forms are encrypted and saved
+automatically. Unsubmitted draft orders can be deleted. Orders with payment
+attempts or submitted records are retained for tracking and audit.
+
+Order statuses reopen the relevant step. Awaiting-payment orders focus payment,
+confirmed unsuccessful or expired attempts can be retried, and older attempts
+remain in expandable history. Automatic status checks never initiate a charge.
+Unconfirmed payment outcomes must be resolved before another attempt.
+
+New checkout defaults are `PAYMENT_COLLECTION_POLICY=before_review` and
+`PAYMENT_ROUTING_MODE=platform`. TranscriptsKE collects payments and handles
+refunds; an administrator enables billing for each participating school. The
+legacy `PAYMENT_INSTITUTION_ID` applies only to pilot routing. Demo services are
+seeded at KES 5 per copy; existing signed quotes retain their original amounts.
+
+Configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_PUBLISHABLE_KEY` from the same provider account and mode to enable secure
+embedded card entry. Card numbers, expiry and CVC go directly to the provider;
+the application never stores them. Test mode requires test cards. Without a
+publishable key, new attempts retain hosted checkout. See the
+[payments guide](docs/milestone-5.md) and
+[M-Pesa sandbox setup](docs/mpesa-sandbox.md) for provider configuration.
+
+Apply migrations through `0017` with `uv run alembic upgrade head` from `backend/`.
+The workspace includes profile and support menus, private notifications,
+clickable order history, and a persistent light/dark switch.
