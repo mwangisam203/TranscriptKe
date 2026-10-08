@@ -11,7 +11,7 @@ from app.models.access import AccessEvent
 from tests.fixtures_academic import grant
 from tests.test_academic_records import ME, create, decision, review_url, submission
 
-RAW_ID = "AB12345678"
+RAW_ID = "12345678"
 
 
 def test_id_only_submission_is_encrypted_masked_and_reviewed(
@@ -104,7 +104,7 @@ def test_duplicate_id_and_resubmission_do_not_leak_identifier(
     )
     assert request.status_code == 200
     payload = submission(
-        catalog, admission_number=None, id_number="CD99887766", expected_version=2
+        catalog, admission_number=None, id_number="99887766", expected_version=2
     )
     del payload["institution_id"]
     response = client.post(
@@ -166,7 +166,14 @@ def test_downgrade_preserves_id_only_records_by_refusing_data_loss(
         with pytest.raises(RuntimeError, match="before downgrading"):
             command.downgrade(migration_config(connection), "0009")
     db.expire_all()
-    assert db.get(AcademicRecordLink, link["id"]).identity_masked == "••••78"
+    assert (
+        db.scalar(
+            select(AcademicRecordLink.identity_masked).where(
+                AcademicRecordLink.id == link["id"]
+            )
+        )
+        == "••••78"
+    )
 
 
 def test_identity_migration_preserves_existing_records_and_foreign_keys(
