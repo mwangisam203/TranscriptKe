@@ -19,7 +19,7 @@ def test_fresh_database_matches_models_and_can_roundtrip(engine):
     with engine.begin() as connection:
         config = migration_config(connection)
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0017"
         )
         command.check(config)
         command.downgrade(config, "base")
@@ -60,7 +60,7 @@ def test_upgrade_preserves_legacy_accounts_but_requires_real_verification(engine
 
 def test_seed_is_repeatable_and_does_not_overwrite_existing_data(db, monkeypatch):
     monkeypatch.setattr(settings, "APP_ENV", "development")
-    assert seed_institutions(db) == 2
+    assert seed_institutions(db) == 10
     institution = db.scalar(select(Institution).where(Institution.code == "DEMO-UNI"))
     institution.is_active = False
     db.commit()
