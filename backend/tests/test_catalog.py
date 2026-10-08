@@ -242,12 +242,39 @@ def test_demo_catalog_seed_is_repeatable(db, monkeypatch):
     seed_academic_demo(db)
     services = db.scalars(select(InstitutionService)).all()
     policies = db.scalars(select(OrderingPolicy)).all()
-    assert len(services) == len(policies) == 2
+    assert len(services) == len(policies) == 10
+    assert all(
+        service.fee_minor == 500 and service.currency == "KES" for service in services
+    )
     services[0].fee_minor = 777
     policies[0].accepting_requests = False
     db.commit()
     seed_academic_demo(db)
-    assert len(db.scalars(select(InstitutionService)).all()) == 2
+    assert len(db.scalars(select(InstitutionService)).all()) == 10
     db.refresh(services[0])
     db.refresh(policies[0])
     assert services[0].fee_minor == 777 and not policies[0].accepting_requests
+
+
+def test_demo_institution_search_is_literal_and_case_insensitive(
+    client, db, monkeypatch
+):
+    monkeypatch.setattr(settings, "APP_ENV", "development")
+    seed_academic_demo(db)
+    directory = client.get("/api/v1/institutions").json()
+    assert len(directory) == 10
+    assert all("Demo" in item["name"] for item in directory)
+    for query in ("lakeview", "DEMO-LAKEVIEW", "  Lakeview  "):
+        result = client.get("/api/v1/institutions", params={"q": query}).json()
+        assert len(result) == 1 and result[0]["code"] == "DEMO-LAKEVIEW"
+    for query in ("%", "_", "nonexistent college"):
+        assert client.get("/api/v1/institutions", params={"q": query}).json() == []
+
+
+def test_search_matches_partial_words_in_any_order(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "development")
+    seed_academic_demo(db)
+    for query in ("uni lake", "LAKE VIEW", "lake university"):
+        response = client.get("/api/v1/institutions", params={"q": query})
+        assert response.status_code == 200
+        assert [item["code"] for item in response.json()] == ["DEMO-LAKEVIEW"]
