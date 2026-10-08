@@ -6,7 +6,7 @@ const validDeliveryId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 if (!validDeliveryId) {
   recipientNotice.classList.add("error");
   recipientNotice.textContent = "Open the complete delivery link from your notification email.";
-  document.querySelectorAll("button").forEach((button) => {button.disabled = true;});
+  document.querySelectorAll("#request-code button, #download-document button").forEach((button) => {button.disabled = true;});
 }
 for (const [id, path] of [["request-code", "access-codes"], ["download-document", "download"]]) {
   const form = document.getElementById(id);
