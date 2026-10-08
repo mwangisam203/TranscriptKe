@@ -23,7 +23,9 @@ def submission(catalog, **changes):
         "name_on_record": "  Jane   Doe ",
         "program": "Computer Science",
         "attendance_start_year": 2018,
+        "attendance_start_month": 9,
         "attendance_end_year": 2022,
+        "attendance_end_month": 6,
         "previous_names": [],
         **changes,
     }
@@ -490,3 +492,23 @@ def test_status_filter_and_pagination(client, catalog, user_factory, auth_header
     assert client.get(base + "?limit=101", headers=staff).status_code == 422
     page = client.get(ME + "?limit=1&offset=1", headers=auth_headers(user)).json()
     assert page[0]["id"] == first["id"]
+
+
+def test_legacy_record_without_identity_number_type_can_be_read(
+    client, catalog, user_factory, auth_headers, db
+):
+    user = user_factory()
+    link = create(client, catalog, user, auth_headers)
+    stored = db.get(AcademicRecordLink, link["id"])
+    stored.id_number_type = None  # Existing rows predate the ID-type field.
+    db.commit()
+    response = client.get(ME, headers=auth_headers(user))
+    assert response.status_code == 200
+    assert response.json()[0]["id_number_type"] is None
+    response = client.get(f"{ME}/{link['id']}", headers=auth_headers(user))
+    assert response.status_code == 200
+    assert response.json()["id_number_type"] is None
+    staff = client.get(
+        review_url(catalog, link["id"]), headers=auth_headers(catalog["staff"])
+    )
+    assert staff.status_code == 200 and staff.json()["id_number_type"] is None
