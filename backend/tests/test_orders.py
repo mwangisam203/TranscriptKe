@@ -90,6 +90,10 @@ def authorize(client, w):
                 "quote_id": quote["id"],
                 "text_version": CONSENT_VERSION,
                 "accepted": True,
+                "signer_name": "Test User",
+                "signature": [
+                    [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.6}, {"x": 0.8, "y": 0.2}]
+                ],
             },
         )
     )
@@ -270,6 +274,14 @@ def test_consent_is_explicit_and_bound_to_exact_quote(client, workflow):
                     "quote_id": quote["id"],
                     "text_version": CONSENT_VERSION,
                     "accepted": True,
+                    "signer_name": "Test User",
+                    "signature": [
+                        [
+                            {"x": 0.1, "y": 0.1},
+                            {"x": 0.4, "y": 0.6},
+                            {"x": 0.8, "y": 0.2},
+                        ]
+                    ],
                     **change,
                 },
             ).status_code
@@ -787,3 +799,120 @@ def test_concurrent_submission_and_edits_are_serialized(client, workflow, engine
             )
         )
     assert sorted(r.status_code for r in responses) == [200, 409]
+
+
+@pytest.mark.parametrize("destination", ["self", "institution"])
+def test_create_with_destination_is_atomic_and_idempotent(
+    client, workflow, destination
+):
+    w = workflow
+    recipient = {
+        **RECIPIENT,
+        "destination_type": destination,
+        "organization": "Demo receiving university"
+        if destination == "institution"
+        else "",
+    }
+    payload = {"academic_record_link_id": w["link"]["id"], "recipient": recipient}
+    headers = {**w["headers"], "Idempotency-Key": "destination-order-001"}
+    created = checked(client.post(BASE, headers=headers, json=payload), 201)
+    assert created["recipients"][0]["destination_type"] == destination
+    assert created["recipients"][0]["email"] == recipient["email"]
+    assert created["items"][0]["recipient_key"] == recipient["key"]
+    assert len(created["items"]) == 1
+    retry = checked(client.post(BASE, headers=headers, json=payload), 201)
+    assert retry["id"] == created["id"]
+    payload["recipient"]["email"] = "changed@example.com"
+    assert client.post(BASE, headers=headers, json=payload).status_code == 409
+    created = checked(
+        client.put(
+            f"{BASE}/{created['id']}",
+            headers=headers,
+            json={
+                "expected_version": created["version"],
+                "purpose": "Application documents",
+                "recipients": created["recipients"],
+                "items": [
+                    {
+                        key: item[key]
+                        for key in ("key", "service_id", "recipient_key", "quantity")
+                    }
+                    for item in created["items"]
+                ],
+            },
+        )
+    )
+    quote = checked(
+        client.post(
+            f"{BASE}/{created['id']}/quotes",
+            headers=headers,
+            json={"expected_version": created["version"]},
+        ),
+        201,
+    )
+    assert quote["snapshot"]["recipients"][0]["destination_type"] == destination
+    url = f"{BASE}/{created['id']}"
+    consent = checked(
+        client.post(
+            url + "/consents",
+            headers=headers,
+            json={
+                "quote_id": quote["id"],
+                "text_version": CONSENT_VERSION,
+                "accepted": True,
+                "signer_name": "Test User",
+                "signature": [
+                    [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.6}, {"x": 0.8, "y": 0.2}]
+                ],
+            },
+        )
+    )
+    submitted = checked(
+        client.post(
+            url + "/submit",
+            headers={**headers, "Idempotency-Key": "destination-submit-001"},
+            json={
+                "expected_version": created["version"],
+                "quote_id": quote["id"],
+                "consent_id": consent["id"],
+            },
+        )
+    )
+    assert (
+        submitted["submitted_snapshot"]["recipients"][0]["destination_type"]
+        == destination
+    )
+    reordered = checked(
+        client.post(
+            url + "/reorder",
+            headers={**headers, "Idempotency-Key": "destination-reorder-001"},
+        ),
+        201,
+    )
+    assert reordered["recipients"][0]["destination_type"] == destination
+    assert reordered["recipients"][0]["email"] == "admissions@example.com"
+
+
+@pytest.mark.parametrize(
+    "recipient",
+    [
+        {**RECIPIENT, "destination_type": "institution", "organization": "   "},
+        {**RECIPIENT, "destination_type": "self", "organization": "University"},
+        {**RECIPIENT, "destination_type": "self", "email": None},
+        {**RECIPIENT, "destination_type": "invalid"},
+    ],
+)
+def test_invalid_initial_destination_does_not_create_order(
+    client, workflow, db, recipient
+):
+    before = db.scalar(select(func.count()).select_from(Order))
+    response = client.post(
+        BASE,
+        headers={**workflow["headers"], "Idempotency-Key": "invalid-destination-001"},
+        json={
+            "academic_record_link_id": workflow["link"]["id"],
+            "recipient": recipient,
+        },
+    )
+    assert response.status_code == 422
+    assert db.scalar(select(func.count()).select_from(Order)) == before
