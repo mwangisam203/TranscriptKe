@@ -106,12 +106,13 @@ altering existing accounts, payments, approvals or issued documents. Downgrade
 removes these records; generic audit events remain. Test backup restoration before
 production changes. No new environment variables or dependencies are required.
 
-Payment collection remains restricted by `PAYMENT_INSTITUTION_ID` and the existing
-provider account/mode binding. **Do not switch that setting to onboard another
-institution while outstanding payments depend on the current account.** Multiple
-merchant accounts, Stripe Connect, institution-specific M-Pesa credentials and
-settlements need a separately designed rollout. An expansion decision does not
-change these settings or bypass recipient consent, scanning or registrar release.
+At this milestone, payment collection was restricted to a single pilot institution.
+Migration `0017` subsequently adds TranscriptsKE platform collection, with an
+explicit enablement setting for each approved school. Each order still belongs to
+one school. Existing attempts retain their original merchant scope and provider
+account/mode binding. Multiple merchant accounts, Stripe Connect and automatic
+settlements remain deferred. An expansion decision does not bypass collection
+enablement, recipient consent, scanning or registrar release.
 
 Still deferred: real institution/provider acceptance, MFA, SIS integrations,
 third-party ordering, public credential verification, formal SLA calendars,
