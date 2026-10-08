@@ -849,8 +849,21 @@ def test_real_adapter_builds_provider_requests_without_rounding(
     assert kwargs["data"]["metadata[payment_id]"] == model.id
 
 
-def test_mpesa_adapter_queries_exact_request_and_keeps_timeouts_pending(
-    client, payable, gateway, db, monkeypatch
+@pytest.mark.parametrize(
+    "code,status",
+    [
+        (1037, "failed"),
+        (1032, "failed"),
+        (1025, "failed"),
+        (9999, "failed"),
+        (1019, "expired"),
+        (4999, "pending"),
+        (1001, "pending"),
+        (None, "pending"),
+    ],
+)
+def test_mpesa_adapter_queries_exact_request_and_maps_final_results(
+    client, payable, gateway, db, monkeypatch, code, status
 ):
     payment = checked(start(client, payable, "mpesa"), 201)
     model = db.get(PaymentAttempt, payment["id"])
@@ -859,10 +872,10 @@ def test_mpesa_adapter_queries_exact_request_and_keeps_timeouts_pending(
 
     def mpesa(path, payload):
         calls.append((path, payload))
-        return {"CheckoutRequestID": model.provider_reference, "ResultCode": 1037}
+        return {"CheckoutRequestID": model.provider_reference, "ResultCode": code}
 
     monkeypatch.setattr(adapter, "mpesa", mpesa)
-    assert adapter.observe(model)["status"] == "pending"
+    assert adapter.observe(model)["status"] == status
     assert calls[0][1]["CheckoutRequestID"] == model.provider_reference
 
 
