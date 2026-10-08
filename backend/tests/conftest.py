@@ -5,6 +5,12 @@ from uuid import uuid4
 
 # Never connect tests to the developer's configured application database or mail provider.
 os.environ["APP_ENV"] = "test"
+# Existing milestone regression fixtures exercise the original collection policy.
+# Upfront checkout tests explicitly select before_review.
+os.environ["PAYMENT_COLLECTION_POLICY"] = "after_review"
+os.environ["PAYMENT_ROUTING_MODE"] = "pilot"
+os.environ["PAYMENTS_ENABLED"] = "false"
+os.environ["STRIPE_PUBLISHABLE_KEY"] = ""
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SECRET_KEY"] = "isolated-test-secret-key-at-least-32-characters"
 os.environ["MAIL_BACKEND"] = "file"
