@@ -49,6 +49,8 @@ def test_manager_pilot_submission_and_admin_review(
     evaluation.locator("[name=findings]").fill(REASON)
     evaluation.get_by_role("button", name="Submit pilot evaluation", exact=True).click()
     page.locator("#notice").filter(has_text="immutable evidence snapshot").wait_for()
+    if page.locator("#logout").is_hidden():
+        page.locator("#account-menu-toggle").click()
     page.locator("#logout").click()
     page.locator("#authentication").wait_for(state="visible")
     assert page.locator("#pilot-staff").inner_text() == ""
@@ -80,6 +82,8 @@ def test_manager_pilot_submission_and_admin_review(
     admin.locator("summary").filter(has_text="DEMO · continue pilot").wait_for()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert not errors
+    if page.locator("#logout").is_hidden():
+        page.locator("#account-menu-toggle").click()
     page.locator("#logout").click()
     page.locator("#authentication").wait_for(state="visible")
     assert page.locator("#pilot-admin").inner_text() == ""
