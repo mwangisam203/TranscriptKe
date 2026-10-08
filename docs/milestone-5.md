@@ -12,21 +12,34 @@ public webhook configuration before live use.
 
 ## Collection policy
 
-The agreed policy is **pay after registrar approval**. Every document must be in
-`processing` or `ready`; the institution, record match and consent must still be
-valid. Active holds, unanswered questions, cancellation or an existing unresolved
-payment prevent a new request. Deferred graduation/grades instructions do not stop
-payment after approval, but still block completion of preparation until confirmed.
+New orders use **checkout before institution review**. Enrollment details are
+saved privately; choose documents and recipients, sign consent, then pay. A payable
+order enters `awaiting_payment` with no institution submission timestamp. Only a
+provider-confirmed full payment releases it to the institution and starts its
+processing target. Pending, failed or uncertain attempts do not release an order.
+Zero-fee orders are released immediately after consent without a gateway charge.
+
+`PAYMENT_COLLECTION_POLICY=before_review` is the default for new orders. Each order
+stores its policy. Existing orders retain `after_review` and their prior behavior;
+changing configuration never silently changes an existing order. Those legacy
+orders still require registrar approval before payment. Institution approval,
+signed scope, whole-shilling M-Pesa totals, provider configuration and duplicate
+payment protection apply to checkout. Ownership matching and unchanged enrollment
+scope remain mandatory before preparation and delivery. New private enrollment
+records are hidden from staff until a checkout is released.
 
 Amounts come from the immutable submitted quote in KES minor units. The browser
 cannot supply an amount or alter fees. Zero-fee orders need no payment. M-Pesa is
 offered only for whole-shilling totals; fractional totals must use card payment.
 The app never rounds a price or silently adds gateway fees.
 
-This is a **single authorized pilot merchant configuration**, explicitly restricted
-to `PAYMENT_INSTITUTION_ID`. It is not institution-by-institution merchant routing,
-Stripe Connect, split settlement or a platform payout system. Do not enable one
-institution's merchant credentials for another institution's orders.
+TranscriptsKE collects payments and handles refunds using platform merchant
+credentials. `PAYMENT_ROUTING_MODE=platform` is the default; each approved school
+must also have collection enabled by an administrator. Students select a school
+by name, and each order belongs to that one school. `PAYMENT_INSTITUTION_ID` is
+only required for the optional legacy `pilot` routing mode. Existing attempts
+retain their original merchant scope and provider binding. This does not implement
+Stripe Connect, split settlement or automatic payouts to schools.
 
 ## Local setup
 
@@ -50,7 +63,7 @@ Enable only the provider(s) you configure:
 ```dotenv
 PAYMENTS_ENABLED=true
 PAYMENT_MODE=test
-PAYMENT_INSTITUTION_ID=YOUR_APPROVED_INSTITUTION_ID
+PAYMENT_ROUTING_MODE=platform
 PAYMENT_PUBLIC_URL=https://your-public-test-origin.example
 ```
 
@@ -67,8 +80,20 @@ and test payments do not authorize production issuance.
 
 ## Stripe cards
 
-Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Card numbers and security codes
-are entered on Stripe's hosted page; the application has no card-input endpoint.
+Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PUBLISHABLE_KEY`
+from the same sandbox (or live account). The publishable key enables secure
+embedded card fields inside the application's checkout. Customers see
+**Credit or debit card · Visa / Mastercard**. Card numbers, expiry dates and CVC
+are collected directly by the provider; they never enter application endpoints,
+drafts or logs. The provider checks the card details and the issuing bank
+authorizes payment. Test mode requires provider test cards.
+
+Without a publishable key, new payments use the existing hosted checkout.
+Previously created hosted attempts retain their original checkout URL.
+The owner-only `GET /orders/{id}/payments/{payment_id}/card-checkout` endpoint
+returns a non-cacheable client secret after checking the original amount,
+currency, owner reference, mode and open session. Client secrets are not
+persisted or returned in payment history.
 Requests pin Stripe API version `2025-02-24.acacia`. Configure the webhook endpoint
 with the same API version and your merchant's required account/currency settings.
 
@@ -90,8 +115,9 @@ stripe listen --forward-to localhost:8000/api/v1/payments/webhooks/stripe
 ```
 
 Put the listener's signing secret in your local `.env` and restart the app. The
-redirect returns to `/workspace`; it never changes payment state. Checkout opens in
-a separate tab so the student's existing workspace remains available.
+redirect returns to `/workspace`; it never changes payment state. Hosted checkout opens in a separate tab; embedded checkout remains in the order.
+Neither completion UI nor returning to the workspace marks an order paid;
+backend provider reconciliation confirms payment.
 
 Raw webhook bodies are authenticated with the Stripe signature and a five-minute
 time tolerance. The handler then retrieves the current Checkout Session and
@@ -244,3 +270,27 @@ concurrency checks. Tests cover creation races, signed/replayed callbacks, amoun
 validation, tenant isolation, early M-Pesa reversal results, receipts, ledger
 balances, worker reconciliation, and desktop/mobile refund flows. Tests do not use
 real cards, send real STK prompts, or certify your provider account setup.
+
+For the guided Daraja setup and workspace test flow, see
+[the M-Pesa sandbox guide](mpesa-sandbox.md).
+
+
+## Checkout recovery
+
+Order status buttons reopen checkout; awaiting-payment orders focus the payment
+step. Confirmed failed or expired attempts offer a fresh payment attempt with the
+same signed quote. The most recent attempt is prominent; older attempts remain
+in expandable history. Required fields use visible asterisks, including
+conditional destination and M-Pesa fields.
+
+While an unresolved payment is open, the workspace checks its status after one
+second and then every 15 seconds, up to 20 checks. Checks pause in background
+tabs and stop on navigation or logout. A provider outage leaves a manual status
+check available. Automatic checks never start or resend charges.
+
+For M-Pesa, correlated query results 1037 (unanswered/unreachable prompt), 1025,
+9999, 1032, 1 and 2001 indicate an unsuccessful attempt; 1019 indicates expiry.
+Unknown result codes and network timeouts remain unresolved. This distinguishes
+final provider results from transport failures and allows confirmed unsuccessful
+requests to be retried. The result meanings are described in
+[Safaricom's Online Checkout API reference](https://addiscommunication.gov.et/uploads/Publication/smart-city-2023-08-28-64ec81afaa0d8.pdf).
