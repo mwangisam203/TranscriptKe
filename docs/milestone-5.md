@@ -294,3 +294,35 @@ Unknown result codes and network timeouts remain unresolved. This distinguishes
 final provider results from transport failures and allows confirmed unsuccessful
 requests to be retried. The result meanings are described in
 [Safaricom's Online Checkout API reference](https://addiscommunication.gov.et/uploads/Publication/smart-city-2023-08-28-64ec81afaa0d8.pdf).
+
+
+## Payment actions and unresolved requests
+
+Payment responses include `can_check_status` and `can_resume`. The workspace
+shows actions supported by those flags; it does not offer provider status queries
+for an attempt that has no provider reference. A never-dispatched reservation can
+resume through the existing owner-only `/orders/{id}/payments/{payment_id}/retry`
+route. Dispatched card recovery retains the existing provider idempotency key and
+recovery window. Confirmed failures use a fresh attempt on the same quoted order.
+
+Status-check buttons show loading and errors inside the payment block. The
+registrar and platform finance views use the same payment capabilities. Unresolved
+requests without a reference open payment help with the order and payment IDs.
+
+A different verified platform administrator can investigate an unknown attempt
+with no provider reference and record a no-payment decision through
+`POST /admin/finance/orders/{id}/payments/{payment_id}/no-payment-review`.
+This requires the current order version, a provider case reference, written
+investigation evidence and explicit confirmation that no payment was received.
+It refuses accepted, paid, refunded or ledger-backed attempts. The review keeps
+the original attempt, records private audit evidence, marks the reviewed attempt
+failed and permits a new payment; it never marks the order paid or sends it to the
+school. Use this only after checking the actual outcome with the provider.
+
+
+The order list labels an unpaid request as **Checkout incomplete**. A payment
+attempt shows **Awaiting provider confirmation** or **Outcome not confirmed**
+until its result is known. A status check that confirms failure opens retry;
+a check that still reports pending explicitly explains why retry is not available.
+An administrator's documented no-payment review can unblock an older unresolved
+attempt; the original financial record remains intact.
