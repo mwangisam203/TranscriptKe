@@ -108,7 +108,7 @@ async function O_list(append = false) {
   for (const order of orders) {
     const card = node("article", undefined, "card");
     const awaiting = order.status === "awaiting_payment";
-    const status = action(awaiting ? "Awaiting payment · Continue checkout" : order.status.replaceAll("_", " "), () => O_open(order.id));
+    const status = action(awaiting ? "Checkout incomplete · Continue payment" : order.status.replaceAll("_", " "), () => O_open(order.id));
     status.classList.add("order-status-link"); status.setAttribute("aria-label", `Open ${order.reference}: ${awaiting ? "continue payment" : order.status.replaceAll("_", " ")}`);
     card.append(node("strong", order.reference), status);
     if (order.unanswered_questions) card.append(node("p", `${order.unanswered_questions} question(s) need your response.`));
@@ -180,6 +180,7 @@ async function O_open(id) {
   showView("orders-view");
   $("orders-view").classList.add("checkout-active");
   const generation = ++O_generation;
+  $("order-editor").hidden = true;
   await window.draftsWorkspace?.flush();
   const order = await api(`/orders/${id}`);
   let services = [];
@@ -195,12 +196,14 @@ async function O_open(id) {
   $("order-state").append(action(`Payment: ${order.payment_status.replaceAll("_", " ")} · ${order.status === "awaiting_payment" ? "Continue payment" : "View payment details"}`, P_focusPayment));
   const draft = order.status === "draft";
   $("discard-order").hidden = !draft;
-  $("checkout-progress").textContent = draft ? "Documents and destination → Review and consent → Payment" : order.status === "awaiting_payment" ? "Final step: payment. The school receives your order after confirmed payment." : "Order history — retained for tracking and audit.";
-  $("order-editor").hidden = !draft; $("order-attachment-form").hidden = !draft; $("quote-order").hidden = !draft;
+  O_checkoutSteps(order);
+  $("order-editor").hidden = true; $("order-attachment-form").hidden = !draft; $("quote-order").hidden = !draft;
   $("order-quote").hidden = true; $("order-cancel-form").hidden = !["draft", "awaiting_payment", "submitted"].includes(order.status);
   $("reorder-button").hidden = !order.submitted_at; $("order-message-form").hidden = !order.submitted_at;
   fillForm($("order-editor"), order); O_releaseRequirements(); $("order-recipients").replaceChildren(); $("order-items").replaceChildren();
   if (draft) { order.recipients.forEach(O_addRecipient); order.items.forEach(O_addItem); await window.draftsWorkspace?.restoreOrder(order); }
+  if (O_current !== order || generation !== O_generation) return;
+  $("order-editor").hidden = !draft;
   O_summary($("submitted-order-summary"), order.submitted_snapshot, order.payment_status);
   O_renderAttachments($("order-attachments"), order, null);
   await F_student(order);
@@ -232,7 +235,7 @@ async function O_review() {
   if (!order || order.status !== "draft") return;
   const quote = await api(`/orders/${order.id}/quotes`, "POST", {expected_version: order.version});
   if (O_current !== order) return;
-  O_quote = quote; O_submitKey = O_key();
+  O_quote = quote; O_submitKey = O_key(); O_checkoutSteps(order, true);
   const container = $("order-quote"); O_summary(container, quote.snapshot); container.hidden = false;
   container.append(node("p", `Quote expires: ${new Date(quote.expires_at).toLocaleString()}`));
   const form = document.createElement("form"), label = node("label", undefined, "check"), checkbox = document.createElement("input");
@@ -323,9 +326,35 @@ bindForm("order-attachment-form", async (form) => {
   await api(`/orders/${order.id}/attachments`, "POST", data); form.reset(); await O_open(order.id); notice("Attachment added. Review a fresh quote before submitting.");
 });
 function O_renderTimeline(container, timeline, order) {
-  container.replaceChildren(node("h3", "Order timeline"));
-  for (const entry of timeline) { const row = node("div", undefined, "history"); row.append(node("strong", `${entry.kind.replaceAll("_", " ")} · ${new Date(entry.created_at).toLocaleString()}`), node("p", entry.message)); container.append(row); }
-  for (const cancellation of order.cancellations) container.append(node("p", `Cancellation ${cancellation.status}: ${cancellation.reason}${cancellation.decision_reason ? ` — ${cancellation.decision_reason}` : ""}`));
+  container.replaceChildren();
+  const block = node("section", undefined, "order-timeline-block");
+  block.append(node("h3", "Order timeline"), node("p", "Every update stays in this one record, from saved details to delivery.", "muted"));
+  const list = node("ol", undefined, "order-timeline-steps");
+  for (const [index, entry] of timeline.entries()) {
+    const step = node("li", undefined, "order-timeline-step");
+    const number = node("span", String(index + 1), "timeline-step-number"); number.setAttribute("aria-hidden", "true");
+    const details = node("div");
+    const heading = node("div", undefined, "timeline-step-heading");
+    const date = new Date(entry.created_at), time = node("time", date.toLocaleString()); time.dateTime = date.toISOString();
+    heading.append(node("strong", entry.kind.replaceAll("_", " ")), time);
+    details.append(heading, node("p", entry.message)); step.append(number, details); list.append(step);
+  }
+  if (!timeline.length) block.append(node("p", "Your first order update will appear here.", "muted"));
+  else block.append(list);
+  for (const cancellation of order.cancellations) block.append(node("p", `Cancellation ${cancellation.status}: ${cancellation.reason}${cancellation.decision_reason ? ` — ${cancellation.decision_reason}` : ""}`));
+  container.append(block);
+}
+function O_checkoutSteps(order, reviewing = false) {
+  const container = $("checkout-progress"); container.replaceChildren();
+  const current = order.status === "draft" ? reviewing ? 1 : 0 : order.status === "awaiting_payment" ? 2 : 3;
+  const labels = ["Documents & destination", "Review & consent", "Payment", "Order tracking"];
+  const steps = node("ol", undefined, "checkout-stepper"); steps.setAttribute("aria-label", "Checkout progress");
+  for (const [index, label] of labels.entries()) {
+    const step = node("li", undefined, index === current ? "current" : index < current ? "complete" : "");
+    if (index === current) step.setAttribute("aria-current", "step");
+    step.append(node("span", String(index + 1), "checkout-step-number"), node("span", label)); steps.append(step);
+  }
+  container.append(steps, node("p", order.status === "draft" ? "Your unfinished checkout saves automatically. Continue one step at a time." : order.status === "awaiting_payment" ? "Complete payment to send your order to the institution." : "Your request is retained for tracking and audit."));
 }
 function O_renderMessages(container, messages) {
   container.replaceChildren(node("h3", "Messages"));
