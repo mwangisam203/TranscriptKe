@@ -7,6 +7,36 @@ function P_reconcile(base) {
   }
   return P_checks.get(base);
 }
+
+function P_button(container, label, handler) {
+  const button = node("button", label, "secondary"), feedback = node("p", "", "payment-feedback");
+  button.type = "button"; feedback.hidden = true; feedback.setAttribute("role", "status");
+  button.addEventListener("click", async () => {
+    if (button.disabled) return;
+    button.disabled = true; button.textContent = "Please wait…"; feedback.hidden = false;
+    feedback.textContent = "Working…"; feedback.classList.remove("error-text");
+    try { await handler(); if (feedback.isConnected) feedback.textContent = "Done."; }
+    catch (error) { feedback.textContent = error.message; feedback.classList.add("error-text"); feedback.setAttribute("role", "alert"); }
+    finally { button.disabled = false; button.textContent = label; }
+  });
+  container.append(button, feedback); return button;
+}
+function P_setStatusAction(label, handler) {
+  const current = $("order-state").querySelector("button");
+  if (current) current.replaceWith(action(label, handler));
+}
+function P_focusRetry() {
+  const form = $("student-payments").querySelector("form");
+  form?.scrollIntoView({block: "center", behavior: "smooth"}); form?.elements.provider?.focus({preventScroll: true});
+}
+function P_paymentHelp(order, payment) {
+  const dialog = $("account-support-dialog");
+  let context = $("payment-support-context");
+  if (!context) { context = node("p", undefined, "payment-help-context"); context.id = "payment-support-context"; dialog.querySelector(".support-dialog-heading").after(context); dialog.addEventListener("close", () => context.remove(), {once: true}); }
+  context.textContent = `Payment needs investigation: order ${order.reference}, payment ${payment.id}. No confirmation reference was received. TranscriptsKE support must confirm the outcome before another charge. Your order details remain saved.`;
+  if (!dialog.open) dialog.showModal();
+}
+
 let P_refreshTimer = null, P_refreshGeneration = 0;
 function P_stopRefresh() { clearTimeout(P_refreshTimer); P_refreshTimer = null; P_refreshGeneration++; }
 function P_focusPayment() {
@@ -73,10 +103,12 @@ function P_attempt(container, payment) {
   const card = node("div", undefined, "card");
   const merchant = payment.merchant_scope === "platform" ? "TranscriptsKE support" : "the institution";
   if (payment.merchant_scope === "platform") card.append(node("p", "Collected by TranscriptsKE · Refunds handled by TranscriptsKE", "muted"));
-  card.append(node("strong", `${payment.provider === "stripe" ? "Card" : "M-Pesa"} · ${O_money(payment.amount_minor)}`), node("p", `${payment.mode === "test" ? "TEST — no real funds · " : ""}${payment.status.replaceAll("_", " ")}`));
+  card.append(node("strong", `${payment.provider === "stripe" ? "Card" : "M-Pesa"} · ${O_money(payment.amount_minor)}`), node("p", `${payment.mode === "test" ? "TEST — no real funds · " : ""}${payment.status === "pending" ? "Awaiting provider confirmation" : payment.status === "unknown" ? "Outcome not confirmed" : payment.status.replaceAll("_", " ")}`));
   if (payment.provider === "mpesa" && payment.status === "pending") card.append(node("p", payment.mode === "test"
     ? "Sandbox STK request accepted. Check the Daraja test result, then check payment status. A test request is not proof of payment."
     : "M-Pesa request accepted. Complete the prompt on your phone, then check payment status. Enter your PIN only in the M-Pesa prompt."));
+  if (payment.failure_reason) card.append(node("p", payment.failure_reason, "error-text"));
+  if (payment.status === "pending") card.append(node("p", "Payment has not been confirmed. Check the provider status below. If the provider confirms failure or expiry, a retry form appears here; once payment succeeds, your order continues automatically.", "muted"));
   if (payment.phone_hint) card.append(node("p", `Mobile ending ${payment.phone_hint}`));
   if (payment.refunded_minor) card.append(node("p", `Refunded: ${O_money(payment.refunded_minor)}`));
   if (payment.refund) card.append(node("p", `Refund ${payment.refund.status}: ${payment.refund.reason}`));
@@ -94,11 +126,11 @@ async function P_student(order) {
   if (data.merchant_scope === "platform") container.append(node("p", "Payments are collected by TranscriptsKE. Refund requests are reviewed by TranscriptsKE.", "muted"));
   if (order.status === "awaiting_payment") container.append(node("p", "Your order is saved privately. The institution receives it only after confirmed payment. Pending or failed payment does not send the order."));
   if (!data.available_methods.length && order.payment_status === "not_started") container.append(node("p", "Payments are not enabled for this institution or total yet."));
-  if (!["paid", "refunded"].includes(order.payment_status)) for (const blocker of data.blockers) container.append(node("p", blocker === "An existing payment or refund must be resolved first." ? "A payment or refund is awaiting confirmation. Check its status below before starting another payment." : blocker, "muted"));
+  if (!["paid", "refunded"].includes(order.payment_status)) for (const blocker of data.blockers) container.append(node("p", blocker === "An existing payment or refund must be resolved first." ? "Complete the action shown below before starting another payment." : blocker, "muted"));
   const latestAttempt = data.attempts.at(-1);
   const retry = latestAttempt && ["failed", "expired"].includes(latestAttempt.status);
   if (retry && order.payment_status === "not_started") {
-    $("order-state").querySelector("button").textContent = `Payment: ${latestAttempt.status === "expired" ? "expired" : "unsuccessful"} · ${!data.blockers.length && data.available_methods.length ? "Retry payment" : "View payment details"}`;
+    P_setStatusAction(`Payment: ${latestAttempt.status === "expired" ? "expired" : "unsuccessful"} · ${!data.blockers.length && data.available_methods.length ? "Retry payment" : "View payment details"}`, !data.blockers.length && data.available_methods.length ? P_focusRetry : P_focusPayment);
   }
   if (retry && !data.blockers.length) container.append(node("p", "The previous payment was unsuccessful. You can retry this checkout or choose another available payment method."));
   if (data.available_methods.length && !data.blockers.length) F_form(container, retry ? "Retry your payment" : order.collection_policy === "before_review" ? "Pay and send your order" : "Pay approved order", (form) => {
@@ -133,14 +165,12 @@ async function P_student(order) {
   for (const payment of [...data.attempts].reverse()) {
     const target = payment.id === latestAttempt.id ? container : older;
     const card = P_attempt(target, payment), base = `/orders/${order.id}/payments/${payment.id}`;
-    if (payment.id === latestAttempt.id && ["pending", "unknown", "initiating"].includes(payment.status)) {
+    if (payment.id === latestAttempt.id && payment.can_check_status && ["pending", "unknown", "initiating"].includes(payment.status)) {
       const statusLine = node("p", "Checking payment status…", "muted"); statusLine.setAttribute("role", "status"); card.append(statusLine);
       P_watchPayment(order, payment, statusLine);
     }
     if (payment.id === latestAttempt.id && ["failed", "expired"].includes(payment.status) && !data.blockers.length && data.available_methods.length) {
-      card.append(action("Choose method and retry", () => {
-        const form = container.querySelector("form"); form?.scrollIntoView({block: "center", behavior: "smooth"}); form?.elements.provider?.focus({preventScroll: true});
-      }));
+      card.append(action("Choose method and retry", P_focusRetry));
     }
     if (payment.embedded_card && payment.status === "pending") {
       card.append(node("h4", "Card details · Visa / Mastercard"));
@@ -150,12 +180,22 @@ async function P_student(order) {
     } else if (payment.checkout_url && payment.status === "pending") {
       const link = node("a", "Open secure card checkout"); link.href = payment.checkout_url; link.target = "_blank"; link.rel = "noopener noreferrer"; card.append(link);
     }
-    card.append(action("Check payment status", async () => {
-      P_stopRefresh(); await P_reconcile(base);
+    if (payment.can_check_status) P_button(card, "Check payment status", async () => {
+      P_stopRefresh(); const updated = await P_reconcile(base);
       if (O_current !== order) return;
-      await O_open(order.id); await O_list(); notice("Payment status checked with the provider.");
-    }));
-    if (payment.provider === "stripe" && payment.status === "unknown") card.append(action("Recover card checkout", async () => {await api(base + '/retry', 'POST'); await O_open(order.id);}));
+      await O_open(order.id); await O_list();
+      notice(["failed", "expired"].includes(updated.status) ? "Payment status checked: unsuccessful. Choose your method and retry below." : updated.status === "pending" || updated.status === "unknown" ? "Payment status checked: no final outcome yet. Complete the prompt or check again; retry appears after confirmed failure." : "Payment status checked with the provider.");
+    });
+    else if (payment.can_resume) P_button(card, payment.provider === "stripe" ? "Recover card checkout" : "Continue payment request", async () => {
+      P_stopRefresh(); await api(base + "/retry", "POST");
+      if (O_current !== order) return;
+      await O_open(order.id); await O_list(); notice("Payment request recovered. Continue below.");
+    });
+    else if (["unknown", "initiating", "pending"].includes(payment.status)) {
+      card.append(node("h4", "Payment needs confirmation"), node("p", "No confirmation reference was received, so this request cannot be checked automatically. Your checkout is saved. Get payment help before retrying to avoid a duplicate charge."));
+      P_button(card, "Get payment help", () => P_paymentHelp(order, payment));
+      if (payment.id === latestAttempt.id) P_setStatusAction("Payment needs confirmation · Get payment help", () => P_paymentHelp(order, payment));
+    }
     if (payment.paid_at) card.append(action("View payment receipt", async () => {
       const receipt = await api(base + '/receipt');
       if (O_current !== order) return;
@@ -176,9 +216,10 @@ async function P_staff(context, order) {
   const older = data.attempts.length > 1 ? document.createElement("details") : null;
   if (older) older.append(node("summary", "Previous payment attempts"));
   for (const payment of [...data.attempts].reverse()) {
-    const target = payment.id === latestAttempt.id ? container : older;
+    const target = payment.id === data.attempts.at(-1).id ? container : older;
     const card = P_attempt(target, payment), base = `/staff/institutions/${context.id}/orders/${order.id}/payments/${payment.id}`;
-    card.append(action("Reconcile payment", async () => {await api(base + '/reconcile', 'POST'); await O_openStaff(context, order.id); notice("Payment reconciled with the provider.");}));
+    if (payment.can_check_status) P_button(card, "Reconcile payment", async () => {await api(base + "/reconcile", "POST"); await O_openStaff(context, order.id); notice("Payment reconciled with the provider.");});
+    else if (["unknown", "initiating", "pending"].includes(payment.status)) card.append(node("p", "No provider reference was received. TranscriptsKE support must investigate this payment."));
     if (context.manager && payment.merchant_scope !== "platform" && payment.status === "succeeded" && (!payment.refund || (["requested", "rejected"].includes(payment.refund.status) || (payment.provider === "stripe" && payment.refund.status === "unknown")))) F_form(card, "Full refund decision", (form) => {
       const choices = [["refunds", "Approve full refund and cancel order"]];
       if (payment.refund?.status === "requested") choices.push(["refund-rejections", "Reject refund request"]);
@@ -190,6 +231,7 @@ async function P_staff(context, order) {
       await O_openStaff(context, order.id); notice("Refund decision recorded. Check the provider-confirmed status.");
     });
   }
+  if (older) container.append(older);
   const history = document.createElement("details"); history.append(node("summary", "Payment ledger and history"));
   for (const entry of data.ledger) history.append(node("p", `${entry.entry_key}: ${O_money(entry.amount_minor)} · ${new Date(entry.created_at).toLocaleString()}`));
   for (const entry of data.events) history.append(node("p", `${new Date(entry.created_at).toLocaleString()} · ${entry.message}`));
