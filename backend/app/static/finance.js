@@ -32,7 +32,18 @@
       const card = P_attempt($("finance-payments"), payment);
       card.prepend(node("strong", `${payment.institution_name} · ${payment.order_reference}`));
       const base = `/admin/finance/orders/${payment.order_id}/payments/${payment.id}`;
-      card.append(action("Check provider status", async () => { await api(base + "/reconcile", "POST"); await load(); notice("Provider status checked."); }));
+      if (payment.can_check_status) P_button(card, "Check provider status", async () => { await api(base + "/reconcile", "POST"); await load(); notice("Provider status checked."); });
+      else if (["unknown", "initiating", "pending"].includes(payment.status)) card.append(node("p", "Provider reference missing: confirm the outcome with the provider before allowing another charge."));
+      if (payment.status === "unknown" && !payment.can_check_status) F_form(card, "Resolve unconfirmed payment", form => {
+        form.append(node("p", "Investigate with the provider first. Save this decision only when the provider confirms no payment was received. Never use it to bypass an unresolved charge."));
+        O_input(form, "Provider case reference", "provider_case_reference").required = true;
+        const evidence = O_input(form, "Investigation evidence (at least 30 characters)", "evidence"); evidence.required = true; evidence.minLength = 30; evidence.maxLength = 2000;
+        const label = node("label", undefined, "check"), confirmed = document.createElement("input"); confirmed.type = "checkbox"; confirmed.name = "confirmed_no_payment"; confirmed.required = true;
+        label.append(confirmed, document.createTextNode("I have confirmed with the provider that no payment was received.")); form.append(label);
+      }, "Confirm no payment and allow retry", async form => {
+        await api(base + "/no-payment-review", "POST", {expected_version:payment.order_version, provider_case_reference:form.elements.provider_case_reference.value, evidence:form.elements.evidence.value, confirmed_no_payment:form.elements.confirmed_no_payment.checked});
+        await load(); notice("Investigation recorded. The customer can retry checkout.");
+      });
       if (payment.status === "succeeded" && (!payment.refund || ["requested", "rejected"].includes(payment.refund.status) || (payment.provider === "stripe" && payment.refund.status === "unknown"))) {
         F_form(card, "Platform refund decision", form => {
           const choices = [["refunds", "Approve full refund"]];
