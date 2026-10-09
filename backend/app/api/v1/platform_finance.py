@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -231,5 +232,82 @@ def reject(
     refund.status = "rejected"
     order.payment_status = aggregate_status(db, order)
     log(db, order, payment, "refund_rejected", payload.reason, user.id)
+    db.commit()
+    return public_payment(db, payment)
+
+
+class NoPaymentReview(StrictInput):
+    expected_version: int = Field(ge=1)
+    provider_case_reference: str = Field(min_length=5, max_length=150)
+    evidence: str = Field(min_length=30, max_length=2000)
+    confirmed_no_payment: Literal[True]
+
+
+@router.post("/finance/orders/{order_id}/payments/{payment_id}/no-payment-review")
+def resolve_unconfirmed_payment(
+    order_id: Id,
+    payment_id: UUID,
+    payload: NoPaymentReview,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+):
+    order, payment = platform_payment(db, user, order_id, payment_id)
+    check_version(order.version, payload.expected_version)
+    if order.user_id == user.id:
+        raise HTTPException(
+            403, "Another platform administrator must review your payment"
+        )
+    if (
+        payment.status != "unknown"
+        or payment.provider_reference
+        or payment.paid_at
+        or payment.refunded_minor
+        or db.scalar(
+            select(PaymentLedger.id)
+            .where(PaymentLedger.payment_id == payment.id)
+            .limit(1)
+        )
+        or db.scalar(
+            select(PaymentRefund.id)
+            .where(PaymentRefund.payment_id == payment.id)
+            .limit(1)
+        )
+    ):
+        raise HTTPException(
+            409,
+            "Only an unconfirmed payment without a provider reference can use this review",
+        )
+    if (
+        len(payload.provider_case_reference.strip()) < 5
+        or len(payload.evidence.strip()) < 30
+    ):
+        raise HTTPException(
+            422, "Provide the provider case reference and investigation evidence"
+        )
+    payment.status = "failed"
+    payment.active_order_id = None
+    order.payment_status = aggregate_status(db, order)
+    log(
+        db,
+        order,
+        payment,
+        "payment_rejected",
+        "TranscriptsKE reviewed this unconfirmed request and confirmed no payment was received. You can retry checkout.",
+        user.id,
+    )
+    db.add(
+        AccessEvent(
+            actor_id=user.id,
+            institution_id=order.institution_id,
+            subject_id=order.id,
+            action="unconfirmed_payment_reviewed",
+            details={
+                "payment_id": payment.id,
+                "provider_case_reference": payload.provider_case_reference.strip(),
+                "evidence": payload.evidence.strip(),
+                "outcome": "no_payment_received",
+            },
+        )
+    )
     db.commit()
     return public_payment(db, payment)
