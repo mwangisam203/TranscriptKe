@@ -617,3 +617,25 @@ label > .required-marker { color: #bd352d; font-weight: 800; font-size: inherit;
 html[data-theme="dark"] label > .required-marker { color: #ff9b91; }
 .order-status-link { display: block; margin-block: 12px; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
 #student-payments { scroll-margin-top: 110px; }
+
+/* One connected block for checkout steps and one for the complete audit timeline. */
+.checkout-stepper { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.checkout-stepper li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .8rem; }
+.checkout-step-number, .timeline-step-number { display: inline-grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); }
+.checkout-stepper .current { color: var(--text); font-weight: 750; }
+.checkout-stepper .current .checkout-step-number { background: var(--accent); color: var(--surface); }
+.checkout-stepper .complete .checkout-step-number { border-color: var(--accent); color: var(--accent); }
+.checkout-guide > p { margin-bottom: 0; color: var(--muted); font-size: .83rem; }
+.order-timeline-block { border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-block: 24px; background: var(--surface); }
+.order-timeline-block h3 { margin-top: 0; }
+.order-timeline-steps { list-style: none; padding: 0; margin: 18px 0 0; }
+.order-timeline-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 14px; position: relative; padding-bottom: 22px; }
+.order-timeline-step:not(:last-child)::before { content: ""; position: absolute; top: 28px; bottom: 0; left: 13px; width: 2px; background: var(--border); }
+.order-timeline-step:last-child { padding-bottom: 0; }
+.timeline-step-heading { display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: space-between; }
+.timeline-step-heading time { color: var(--muted); font-size: .75rem; }
+.order-timeline-step p { margin: 6px 0 0; font-size: .83rem; overflow-wrap: anywhere; }
+@media (max-width: 650px) { .checkout-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); } .order-timeline-block { padding: 16px; } }
+
+.payment-feedback { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; overflow-wrap: anywhere; }
+.payment-help-context { padding: 14px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
