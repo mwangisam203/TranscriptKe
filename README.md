@@ -446,8 +446,10 @@ Sign out and reset password. Password changes revoke existing sessions and retur
 to sign-in. The existing Forgot password? flow uses an expiring email reset code.
 Clicking the Home/brand link within the signed-in workspace now navigates to My
 records without reloading the page. The HttpOnly session cookie restores sign-in
-after a reload without extending the original token expiry. JavaScript keeps the
-restored access token in memory, and global logout invalidates the session.
+after a reload. During active use, the workspace renews a valid session before
+expiry through `POST /api/v1/auth/session/refresh`. Background polling alone
+does not renew an idle session. JavaScript keeps the access token in memory,
+and global logout invalidates both original and renewed tokens.
 
 
 ## Continuous checkout and private recovery
