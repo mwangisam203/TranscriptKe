@@ -22,7 +22,11 @@ class GatewayUnavailable(Exception):
 
 
 class GatewayRejected(Exception):
-    pass
+    public_reason = "The payment provider rejected the request. You can retry once the issue is resolved."
+
+
+class GatewayAuthenticationRejected(GatewayRejected):
+    public_reason = "M-Pesa authorization was rejected. TranscriptsKE must check its Daraja credentials before you retry."
 
 
 def configured(provider, *, collection=True):
@@ -130,6 +134,27 @@ class Gateways:
                 and response.status_code in (400, 401, 403, 404, 422)
             ):
                 raise GatewayRejected
+            # An explicit authorization refusal cannot have initiated an STK prompt.
+            # Unknown errors and transport timeouts still require reconciliation.
+            if (
+                method == "POST"
+                and url
+                in (
+                    "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+                    "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+                )
+                and response.status_code in (400, 401, 403, 404)
+            ):
+                try:
+                    error = response.json()
+                except ValueError:
+                    error = {}
+                if isinstance(error, dict) and error.get("errorCode") in (
+                    "404.001.03",
+                    "400.003.01",
+                    "401.003.01",
+                ):
+                    raise GatewayAuthenticationRejected
             response.raise_for_status()
             result = response.json()
             if not isinstance(result, dict):
