@@ -1002,3 +1002,77 @@ def test_typing_search_and_autosave_do_not_move_cards(
     assert abs(after_save["x"] - baseline["x"]) < 1
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.close()
+
+
+def test_activity_renews_near_expiry_session_and_refresh_keeps_login(
+    browser, live_url, user_factory
+):
+    import time
+
+    from jose import jwt
+
+    from app.core.config import settings
+    from app.core.security import ALGORITHM
+
+    user = user_factory()
+    page = browser.new_page()
+    login(page, live_url, user.email)
+    near = jwt.encode(
+        {
+            "sub": str(user.id),
+            "iat": int(time.time()) - 3500,
+            "exp": int(time.time()) + 30,
+            "ver": user.token_version,
+            "type": "access",
+        },
+        settings.SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+    page.evaluate(
+        "(token) => {accessToken=token;lastSessionActivity=Date.now();}", near
+    )
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/v1/auth/session/refresh")
+    ) as refreshed:
+        page.locator("#account-menu-toggle").click()
+    assert refreshed.value.status == 200
+    page.wait_for_function("(token) => accessToken !== token", arg=near)
+    assert page.locator("#workspace").is_visible()
+    page.reload()
+    page.locator("#workspace").wait_for(state="visible")
+    page.close()
+
+
+def test_background_activity_does_not_renew_idle_session(
+    browser, live_url, user_factory
+):
+    import time
+
+    from jose import jwt
+
+    from app.core.config import settings
+    from app.core.security import ALGORITHM
+
+    user = user_factory()
+    page = browser.new_page()
+    login(page, live_url, user.email)
+    near = jwt.encode(
+        {
+            "sub": str(user.id),
+            "iat": int(time.time()) - 3500,
+            "exp": int(time.time()) + 30,
+            "ver": user.token_version,
+            "type": "access",
+        },
+        settings.SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+    page.evaluate(
+        "(token) => {accessToken=token;lastSessionActivity=Date.now()-310000;}", near
+    )
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
+    page.evaluate("() => renewActiveSession()")
+    assert not any(url.endswith("/auth/session/refresh") for url in requests)
+    assert page.evaluate("(token) => accessToken === token", near)
+    page.close()
