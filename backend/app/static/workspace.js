@@ -20,6 +20,7 @@ function bindForm(id, fn) {
   });
 }
 function signOutView() {
+  stopSessionRenewal();
   window.financeWorkspace?.reset();
   window.notificationsWorkspace?.reset();
   window.workspaceInterface?.reset();
@@ -39,12 +40,17 @@ function signOutView() {
 }
 async function api(path, method = "GET", body, extraHeaders = {}) {
   const generation = sessionGeneration;
+  if (accessToken && currentUser) await renewActiveSession().catch(() => {});
+  if (generation !== sessionGeneration) throw new Error("The session changed. Sign in again to continue.");
+  const sentToken = accessToken;
   const multipart = body instanceof FormData;
   const headers = {...(multipart ? {} : {"Content-Type": "application/json"}), ...extraHeaders};
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const response = await fetch(`/api/v1${path}`, {method, headers, body: body === undefined ? undefined : multipart ? body : JSON.stringify(body), cache: "no-store"});
   if (generation !== sessionGeneration) throw new Error("The session changed. Please try again.");
-  if (response.status === 401 && accessToken) signOutView();
+  if (response.status === 401 && accessToken && sentToken === accessToken) {
+    signOutView(); notice("Your session expired or was revoked. Sign in again; your saved checkout details are retained.", true);
+  }
   let data = null;
   if (response.status !== 204) {
     if (response.headers.get("Content-Type")?.includes("application/json")) {
@@ -100,6 +106,7 @@ document.querySelectorAll("[data-view]").forEach((button) => button.addEventList
 
 async function loadSession() {
   currentUser = await api("/auth/me");
+  startSessionRenewal();
   memberships = await api("/staff/memberships");
   publicInstitutions = await api("/institutions");
   $("welcome").textContent = `Welcome back, ${currentUser.full_name.trim().split(/\s+/)[0]}.`;
@@ -683,3 +690,43 @@ new MutationObserver(records => {
     else for (const added of record.addedNodes) if (added.nodeType === Node.ELEMENT_NODE) markRequiredFields(added);
   }
 }).observe(document.body, {subtree: true, childList: true, attributes: true, attributeFilter: ["required", "disabled"]});
+
+// Activity renews a valid session; background polling alone never keeps it alive.
+let sessionRenewalTimer = null, sessionRenewalRequest = null, lastSessionActivity = 0;
+function sessionExpiry() {
+  try {
+    const encoded = accessToken.split(".")[1].replaceAll("-", "+").replaceAll("_", "/");
+    const payload = JSON.parse(atob(encoded));
+    return {expires: payload.exp * 1000, renewBefore: Math.min(300000, Math.max(15000, (payload.exp - payload.iat) * 200))};
+  } catch { return null; }
+}
+function stopSessionRenewal() { clearInterval(sessionRenewalTimer); sessionRenewalTimer = null; lastSessionActivity = 0; }
+function startSessionRenewal() {
+  stopSessionRenewal(); lastSessionActivity = Date.now();
+  sessionRenewalTimer = setInterval(() => { renewActiveSession().catch(() => {}); }, 10000);
+}
+async function renewActiveSession() {
+  if (!accessToken || !currentUser || document.hidden || Date.now() - lastSessionActivity > 300000) return;
+  const expiry = sessionExpiry();
+  if (!expiry || expiry.expires - Date.now() > expiry.renewBefore) return;
+  if (sessionRenewalRequest) return sessionRenewalRequest;
+  const generation = sessionGeneration, token = accessToken;
+  const request = (async () => {
+    const response = await fetch("/api/v1/auth/session/refresh", {method: "POST", headers: {Authorization: `Bearer ${token}`}, credentials: "same-origin", cache: "no-store"});
+    if (generation !== sessionGeneration) return;
+    if (response.status === 401) {
+      signOutView(); notice("Your session expired or was revoked. Sign in again; your saved checkout details are retained.", true); return;
+    }
+    if (!response.ok) throw new Error("Session renewal is temporarily unavailable.");
+    const data = await response.json();
+    if (generation === sessionGeneration) accessToken = data.access_token;
+  })();
+  sessionRenewalRequest = request;
+  try { await request; } finally { if (sessionRenewalRequest === request) sessionRenewalRequest = null; }
+}
+function recordSessionActivity() {
+  if (!currentUser || document.hidden) return;
+  lastSessionActivity = Date.now(); renewActiveSession().catch(() => {});
+}
+for (const event of ["pointerdown", "keydown", "scroll"]) document.addEventListener(event, recordSessionActivity, {passive: true, capture: true});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) recordSessionActivity(); });
