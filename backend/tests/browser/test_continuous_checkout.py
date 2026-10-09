@@ -85,3 +85,26 @@ def test_continue_review_saves_edits_and_draft_can_be_deleted(
     assert client.get(workflow["url"], headers=workflow["headers"]).status_code == 404
     assert page.locator("#order-detail").is_hidden()
     page.close()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_checkout_steps_and_timeline_use_single_blocks(
+    browser, live_url, workflow, width
+):
+    page = browser.new_page(viewport={"width": width, "height": 900})
+    login(page, live_url, workflow["user"].email)
+    page.locator("nav [data-view=orders-view]").click()
+    page.get_by_role("button", name="Open order", exact=True).click()
+    page.locator("#checkout-progress .checkout-stepper").wait_for(state="visible")
+    page.locator("#order-timeline .order-timeline-block").wait_for(state="visible")
+    assert page.locator("#checkout-progress .checkout-stepper").count() == 1
+    assert (
+        page.locator("#checkout-progress [aria-current=step]")
+        .inner_text()
+        .endswith("Documents & destination")
+    )
+    assert page.locator("#order-timeline .order-timeline-block").count() == 1
+    assert page.locator("#order-timeline .order-timeline-step").count() >= 1
+    assert page.locator("#order-timeline .history").count() == 0
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.close()
