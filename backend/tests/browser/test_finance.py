@@ -45,3 +45,55 @@ def test_platform_admin_can_pause_school_and_refund(
     )
     assert not errors
     page.close()
+
+
+def test_reviewed_unconfirmed_payment_returns_student_to_retry(
+    browser, live_url, client, platform, gateway, user_factory
+):
+    from tests.test_orders import checked, submit
+    from tests.test_payments import start
+
+    submit(client, platform)
+    gateway.fail_start = True
+    previous = checked(start(client, platform, provider="mpesa"), 201)
+    admin = user_factory(
+        "payment-investigation-browser@example.com", role=UserRole.ADMIN
+    )
+    page = browser.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    login(page, live_url, admin.email)
+    page.locator("#admin-tab").click()
+    page.locator("#finance-payments [name=provider_case_reference]").fill(
+        "SANDBOX-CASE-TEST"
+    )
+    page.locator("#finance-payments [name=evidence]").fill(
+        "Test provider confirmed this request was rejected and no payment was received."
+    )
+    page.locator("#finance-payments [name=confirmed_no_payment]").check()
+    page.get_by_role(
+        "button", name="Confirm no payment and allow retry", exact=True
+    ).click()
+    page.locator("#notice").filter(has_text="customer can retry").wait_for()
+    assert not errors
+    page.close()
+    gateway.fail_start = False
+    student = browser.new_page()
+    login(student, live_url, platform["user"].email)
+    student.locator("nav [data-view=orders-view]").click()
+    student.get_by_role("button", name="Continue payment", exact=True).click()
+    retry = student.get_by_role("button", name="Retry payment", exact=True)
+    retry.wait_for(state="visible")
+    student.locator("#order-state button").click()
+    assert student.locator("#student-payments [name=provider]").evaluate(
+        "element => element === document.activeElement"
+    )
+    student.locator("#student-payments [name=phone]").fill("0712345678")
+    retry.click()
+    student.locator("#notice").filter(has_text="request saved").wait_for()
+    attempts = checked(client.get(platform["pay_url"], headers=platform["headers"]))[
+        "attempts"
+    ]
+    assert len(attempts) == 2 and attempts[-1]["id"] != previous["id"]
+    assert attempts[-1]["status"] == "pending"
+    student.close()
