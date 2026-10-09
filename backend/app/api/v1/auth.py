@@ -82,6 +82,39 @@ def register_user(
     return user
 
 
+def set_session_cookie(response: Response, token: str, request: Request):
+    response.set_cookie(
+        "transcriptske_session",
+        token,
+        httponly=True,
+        secure=settings.APP_ENV == "production" or request.url.scheme == "https",
+        samesite="strict",
+        path="/api/v1",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post("/session/refresh", response_model=Token)
+def refresh_active_session(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+):
+    from urllib.parse import urlsplit
+
+    if request.headers.get("origin"):
+        origin = urlsplit(request.headers["origin"])
+        if origin.scheme != request.url.scheme or origin.netloc != request.url.netloc:
+            raise HTTPException(403, "A same-origin request is required")
+    enforce_rate_limit(
+        db, request, "session_refresh", str(user.id), account_limit=60, ip_limit=180
+    )
+    token = create_access_token(str(user.id), user.token_version)
+    set_session_cookie(response, token, request)
+    return Token(access_token=token)
+
+
 @router.post("/login", response_model=Token)
 def login_user(
     payload: UserLogin,
@@ -107,15 +140,7 @@ def login_user(
     if not user.is_email_verified:
         raise HTTPException(403, "Verify your email before signing in")
     token = create_access_token(str(user.id), user.token_version)
-    response.set_cookie(
-        "transcriptske_session",
-        token,
-        httponly=True,
-        secure=settings.APP_ENV == "production" or request.url.scheme == "https",
-        samesite="strict",
-        path="/api/v1",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
+    set_session_cookie(response, token, request)
     return Token(access_token=token)
 
 
