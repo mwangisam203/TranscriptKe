@@ -283,3 +283,89 @@ def test_invalid_drawn_consent_rejected(client, workflow, changes):
         ).status_code
         == 422
     )
+
+
+def test_active_session_refresh_renews_cookie_and_respects_revocation(
+    client, user_factory
+):
+    import time
+
+    from jose import jwt
+
+    from app.core.config import settings
+    from app.core.security import ALGORITHM
+
+    user = user_factory()
+    payload = {
+        "sub": str(user.id),
+        "iat": int(time.time()) - 3500,
+        "exp": int(time.time()) + 30,
+        "ver": user.token_version,
+        "type": "access",
+    }
+    old = jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+    client.cookies.set("transcriptske_session", old, path="/api/v1")
+    assert (
+        client.post(
+            "/api/v1/auth/session/refresh",
+            headers={"Origin": "https://attacker.example"},
+        ).status_code
+        == 403
+    )
+    response = client.post(
+        "/api/v1/auth/session/refresh", headers={"Origin": "http://testserver"}
+    )
+    assert response.status_code == 200
+    renewed = response.json()["access_token"]
+    decoded = jwt.decode(renewed, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    assert decoded["exp"] > payload["exp"] and decoded["ver"] == user.token_version
+    assert (
+        "HttpOnly" in response.headers["set-cookie"]
+        and "SameSite=strict" in response.headers["set-cookie"]
+    )
+    assert response.headers["cache-control"] == "no-store"
+    assert (
+        client.post(
+            "/api/v1/auth/logout", headers={"Authorization": "Bearer " + renewed}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/v1/auth/session/refresh",
+            headers={"Authorization": "Bearer " + renewed},
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/v1/auth/session/refresh", headers={"Authorization": "Bearer " + old}
+        ).status_code
+        == 401
+    )
+
+
+def test_session_refresh_does_not_restore_expired_tokens(client, user_factory):
+    import time
+
+    from jose import jwt
+
+    from app.core.config import settings
+    from app.core.security import ALGORITHM
+
+    user = user_factory()
+    payload = {
+        "sub": str(user.id),
+        "iat": int(time.time()) - 100,
+        "exp": int(time.time()) - 1,
+        "ver": user.token_version,
+        "type": "access",
+    }
+    expired = jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+    assert (
+        client.post(
+            "/api/v1/auth/session/refresh",
+            headers={"Authorization": "Bearer " + expired},
+        ).status_code
+        == 401
+    )
