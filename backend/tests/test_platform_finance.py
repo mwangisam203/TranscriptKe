@@ -228,3 +228,75 @@ def test_platform_supports_different_schools_with_separate_single_school_orders(
         ).status_code
         == 404
     )
+
+
+def test_unconfirmed_payment_review_is_admin_only_and_allows_retry(
+    client, platform, gateway, user_factory, auth_headers, db
+):
+    from sqlalchemy import select
+
+    from app.models.access import AccessEvent
+    from app.models.payments import PaymentAttempt
+
+    w = platform
+    submit(client, w)
+    gateway.fail_start = True
+    payment = checked(start(client, w, provider="mpesa"), 201)
+    assert not payment["can_check_status"] and not payment["can_resume"]
+    url = f"/api/v1/admin/finance/orders/{w['order']['id']}/payments/{payment['id']}/no-payment-review"
+    body = {
+        "expected_version": checked(client.get(w["url"], headers=w["headers"]))[
+            "version"
+        ],
+        "provider_case_reference": "CASE-2026-TEST",
+        "evidence": "Provider confirmed this request was not accepted and no payment was received.",
+        "confirmed_no_payment": True,
+    }
+    assert client.post(url, headers=w["headers"], json=body).status_code == 403
+    admin = auth_headers(user_factory("reviewer@example.com", role=UserRole.ADMIN))
+    assert (
+        client.post(
+            url, headers=admin, json={**body, "confirmed_no_payment": False}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            url, headers=admin, json={**body, "expected_version": 1}
+        ).status_code
+        == 409
+    )
+    reviewed = checked(client.post(url, headers=admin, json=body))
+    assert reviewed["status"] == "failed"
+    assert db.get(PaymentAttempt, payment["id"]).active_order_id is None
+    audit = db.scalar(
+        select(AccessEvent).where(AccessEvent.action == "unconfirmed_payment_reviewed")
+    )
+    assert audit.details["provider_case_reference"] == "CASE-2026-TEST"
+    assert "CASE-2026-TEST" not in str(reviewed)
+    assert client.post(url, headers=admin, json=body).status_code == 409
+    gateway.fail_start = False
+    retry = checked(start(client, w, provider="mpesa", key="after-investigation"), 201)
+    assert retry["id"] != payment["id"] and retry["status"] == "pending"
+    assert checked(client.get(w["url"], headers=w["headers"]))["submitted_at"] is None
+
+
+def test_review_cannot_override_a_provider_accepted_payment(
+    client, platform, gateway, user_factory, auth_headers
+):
+    w = platform
+    submit(client, w)
+    payment = checked(start(client, w, provider="mpesa"), 201)
+    url = f"/api/v1/admin/finance/orders/{w['order']['id']}/payments/{payment['id']}/no-payment-review"
+    body = {
+        "expected_version": checked(client.get(w["url"], headers=w["headers"]))[
+            "version"
+        ],
+        "provider_case_reference": "CASE-TEST",
+        "evidence": "Provider investigation must not replace querying an accepted payment.",
+        "confirmed_no_payment": True,
+    }
+    admin = auth_headers(
+        user_factory("accepted-reviewer@example.com", role=UserRole.ADMIN)
+    )
+    assert client.post(url, headers=admin, json=body).status_code == 409
