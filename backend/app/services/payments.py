@@ -64,6 +64,17 @@ def log(db, order, payment, kind, message, actor=None):
 
 
 def public_payment(db, payment):
+    failure_reason = None
+    if payment.status == "failed":
+        failure_reason = db.scalar(
+            select(PaymentEvent.message)
+            .where(
+                PaymentEvent.payment_id == payment.id,
+                PaymentEvent.kind == "payment_rejected",
+            )
+            .order_by(PaymentEvent.id.desc())
+            .limit(1)
+        )
     refund = db.scalar(
         select(PaymentRefund)
         .where(PaymentRefund.payment_id == payment.id)
@@ -77,6 +88,18 @@ def public_payment(db, payment):
         "amount_minor": payment.amount_minor,
         "currency": payment.currency,
         "status": payment.status,
+        "failure_reason": failure_reason,
+        "can_check_status": bool(payment.provider_reference)
+        and payment.status not in ("failed", "expired"),
+        "can_resume": payment.status in OPEN
+        and not payment.provider_reference
+        and (
+            not payment.dispatched_at
+            or (
+                payment.provider == "stripe"
+                and utcnow() - aware(payment.created_at) < timedelta(hours=23)
+            )
+        ),
         "refunded_minor": payment.refunded_minor,
         "checkout_url": payment.checkout_url if payment.status == "pending" else None,
         "embedded_card": payment.provider == "stripe"
@@ -278,8 +301,12 @@ def dispatch(db, user, order_id, payment_id, gateway, *, retry=False):
                 db,
                 order,
                 payment,
-                "payment_unconfirmed",
-                "The provider request is unconfirmed. Refresh status before trying another payment.",
+                "payment_rejected"
+                if isinstance(exc, GatewayRejected)
+                else "payment_unconfirmed",
+                exc.public_reason
+                if isinstance(exc, GatewayRejected)
+                else "The provider request is unconfirmed. Refresh status before trying another payment.",
             )
         db.commit()
         return payment
@@ -440,6 +467,9 @@ def apply_observation(db, order, payment, observation):
 
 
 def reconcile(db, order, payment, gateway):
+    if not payment.provider_reference and payment.status in ("failed", "expired"):
+        # Definitive initiation refusals have nothing to query at the provider.
+        return payment
     provider_available(payment)
     if not payment.provider_reference:
         raise HTTPException(
