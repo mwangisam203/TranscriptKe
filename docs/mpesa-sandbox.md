@@ -76,3 +76,25 @@ provider checkout reference means acceptance could not be confirmed. Do not rese
 an unresolved STK request or mark it paid manually. Verify the sandbox app's matching
 shortcode/passkey and inspect the Daraja transaction result. Successful OAuth only
 confirms the consumer credentials; it does not confirm STK acceptance.
+
+
+## When no prompt arrives
+
+Check STK initiation separately from callback delivery. OAuth returning a token
+is not proof that the M-Pesa Express request was accepted. An explicit
+`404.001.03` / Invalid Access Token response without a CheckoutRequestID means
+initiation was rejected. Check that the consumer key and secret belong to the
+same sandbox app with M-Pesa Express enabled; use the matching sandbox shortcode
+and passkey. Restart the backend after changing credentials. If a newly generated
+token is still rejected, test the app in Daraja's simulator and investigate its
+API access with Safaricom support. Do not copy access tokens into frontend code.
+
+The app marks recognized STK authorization refusals as failed, records a safe
+explanation, and permits a new payment attempt after configuration is corrected.
+A network timeout or unrecognized provider error stays uncertain. Old attempts
+with no provider reference are not silently reclassified or resent.
+
+`ERR_NGROK_3200` means the configured endpoint is offline. Run `ngrok http 8000`
+while the backend runs in another terminal. Set `PAYMENT_PUBLIC_URL` to the
+active forwarding URL and restart the backend. Verify that `PUBLIC_URL/health`
+returns the app's JSON health response before testing callbacks.
