@@ -1026,3 +1026,60 @@ def test_rechecking_old_expired_attempt_does_not_clear_new_payment(
     assert (
         checked(client.get(w["url"], headers=w["headers"]))["payment_status"] == "paid"
     )
+
+
+@pytest.mark.parametrize("status,code", [(404, "404.001.03"), (400, "400.003.01")])
+def test_mpesa_explicit_invalid_token_is_rejected(monkeypatch, status, code):
+    import httpx
+
+    from app.services.payment_gateways import GatewayAuthenticationRejected
+
+    original_client = httpx.Client
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            status, json={"errorCode": code, "errorMessage": "Invalid Access Token"}
+        )
+    )
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kwargs: original_client(transport=transport, **kwargs)
+    )
+    with pytest.raises(GatewayAuthenticationRejected):
+        Gateways().request(
+            "POST",
+            "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+            json={},
+        )
+    # An unrecognized refusal remains uncertain instead of allowing a blind retry.
+    with pytest.raises(GatewayUnavailable):
+        Gateways().request(
+            "POST",
+            "https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query",
+            json={},
+        )
+
+
+def test_mpesa_authorization_failure_allows_retry_without_releasing_order(
+    client, payable, gateway
+):
+    from app.services.payment_gateways import GatewayAuthenticationRejected
+
+    original = gateway.initiate
+
+    def reject(payment):
+        raise GatewayAuthenticationRejected
+
+    gateway.initiate = reject
+    first = checked(start(client, payable, "mpesa"), 201)
+    assert first["status"] == "failed"
+    assert "Daraja credentials" in first["failure_reason"]
+    assert (
+        checked(client.get(payable["pay_url"], headers=payable["headers"]))[
+            "payment_status"
+        ]
+        == "not_started"
+    )
+    gateway.initiate = original
+    second = checked(
+        start(client, payable, "mpesa", key="retry-after-auth-refusal"), 201
+    )
+    assert second["id"] != first["id"] and second["status"] == "pending"
