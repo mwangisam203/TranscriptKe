@@ -159,3 +159,57 @@ def test_unconfirmed_payment_cannot_start_another_charge(
     ]
     assert [attempt["id"] for attempt in attempts] == [previous["id"]]
     page.close()
+
+
+def test_missing_provider_reference_opens_payment_help(
+    browser, live_url, client, upfront, gateway
+):
+    submit(client, upfront)
+    gateway.fail_start = True
+    payment = checked(start(client, upfront, provider="mpesa"), 201)
+    page = browser.new_page()
+    login(page, live_url, upfront["user"].email)
+    page.locator("nav [data-view=orders-view]").click()
+    page.get_by_role("button", name="Continue payment", exact=True).click()
+    help_button = page.get_by_role("button", name="Get payment help", exact=True)
+    help_button.wait_for(state="visible")
+    assert (
+        page.get_by_role("button", name="Check payment status", exact=True).count() == 0
+    )
+    assert page.get_by_role("button", name="Retry payment", exact=True).count() == 0
+    help_button.click()
+    page.locator("#account-support-dialog").wait_for(state="visible")
+    assert payment["id"] in page.locator("#payment-support-context").inner_text()
+    assert page.evaluate("P_refreshTimer === null")
+    page.locator("#close-account-support").click()
+    page.locator("#payment-support-context").wait_for(state="detached")
+    assert page.locator("#payment-support-context").count() == 0
+    page.close()
+
+
+def test_status_error_is_inline_and_retry_appears_after_confirmation(
+    browser, live_url, client, upfront, gateway
+):
+    submit(client, upfront)
+    payment = checked(start(client, upfront, provider="mpesa"), 201)
+    gateway.fail_observe = True
+    page = browser.new_page()
+    login(page, live_url, upfront["user"].email)
+    page.locator("nav [data-view=orders-view]").click()
+    page.get_by_role("button", name="Continue payment", exact=True).click()
+    button = page.get_by_role("button", name="Check payment status", exact=True)
+    button.click()
+    page.locator("#student-payments .payment-feedback[role=alert]").filter(
+        has_text="verification is unavailable"
+    ).wait_for()
+    assert button.is_enabled()
+    gateway.fail_observe = False
+    gateway.states[payment["id"]] = {"status": "failed", "refunded_minor": 0}
+    button.click()
+    page.get_by_role("button", name="Retry payment", exact=True).wait_for(
+        state="visible"
+    )
+    assert (
+        page.get_by_role("button", name="Check payment status", exact=True).count() == 0
+    )
+    page.close()
