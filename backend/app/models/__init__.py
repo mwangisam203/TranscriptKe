@@ -40,10 +40,12 @@ from app.models.payments import (
 )
 from app.models.pilot import InstitutionOnboarding, PilotEvaluation
 from app.models.profile import UserProfile
+from app.models.receipts import PaymentReceiptEmail
 from app.models.user import User, UserRole
 from app.models.workspace_draft import WorkspaceDraft
 
 __all__ = [
+    "PaymentReceiptEmail",
     "WorkspaceDraft",
     "UserProfile",
     "InstitutionOnboarding",
