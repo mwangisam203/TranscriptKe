@@ -144,8 +144,9 @@ last four digits. Amounts and destination shortcode are server-controlled.
 
 Each outbound request includes a callback URL bound to that payment with an
 unguessable HMAC token. Callbacks must match the known request, phone and amount;
-a successful receipt is stored only after a server-to-server STK query confirms
-success. The callback token is our integration's authentication mechanism, **not a
+a success receipt is accepted only after the token, checkout reference, amount,
+phone number and receipt uniqueness are validated. The callback settles payment
+and releases the order atomically; a second STK query is not required. The callback token is our integration's authentication mechanism, **not a
 Safaricom signature header**. Uvicorn access logs redact these callback query
 strings. Configure reverse proxies, monitoring and tracing to redact them too.
 
@@ -241,6 +242,7 @@ provider messages separately and accept bodies up to 64 KiB.
 | --- | --- | --- |
 | GET / POST | `/orders/{id}/payments` | Options/status / start approved-order payment |
 | POST | `/orders/{id}/payments/{payment_id}/retry` | Recover uncertain Stripe checkout safely |
+| POST | `/orders/{id}/payments/{payment_id}/retry-prompt` | Check an M-Pesa attempt and send a fresh prompt after confirmed failure; requires Idempotency-Key |
 | POST | `/orders/{id}/payments/{payment_id}/reconcile` | Verify current provider status |
 | GET | `/orders/{id}/payments/{payment_id}/receipt` | Confirmed payment acknowledgment |
 | POST | `/orders/{id}/payments/{payment_id}/refund-requests` | Student full-refund request |
@@ -284,13 +286,13 @@ in expandable history. Required fields use visible asterisks, including
 conditional destination and M-Pesa fields.
 
 While an unresolved payment is open, the workspace checks its status after one
-second and then every 15 seconds, up to 20 checks. Checks pause in background
+second and then every five seconds for two minutes. Checks pause in background
 tabs and stop on navigation or logout. A provider outage leaves a manual status
 check available. Automatic checks never start or resend charges.
 
 For M-Pesa, correlated query results 1037 (unanswered/unreachable prompt), 1025,
 9999, 1032, 1 and 2001 indicate an unsuccessful attempt; 1019 indicates expiry.
-Unknown result codes and network timeouts remain unresolved. This distinguishes
+Unknown result codes and network timeouts remain unresolved in live payments. This distinguishes
 final provider results from transport failures and allows confirmed unsuccessful
 requests to be retried. The result meanings are described in
 [Safaricom's Online Checkout API reference](https://addiscommunication.gov.et/uploads/Publication/smart-city-2023-08-28-64ec81afaa0d8.pdf).
@@ -307,7 +309,9 @@ recovery window. Confirmed failures use a fresh attempt on the same quoted order
 
 Status-check buttons show loading and errors inside the payment block. The
 registrar and platform finance views use the same payment capabilities. Unresolved
-requests without a reference open payment help with the order and payment IDs.
+requests without a reference are refreshed for callback recovery. Unfunded,
+unacknowledged sandbox M-Pesa requests can be retired after two minutes; live
+requests remain blocked for finance review.
 
 A different verified platform administrator can investigate an unknown attempt
 with no provider reference and record a no-payment decision through
@@ -326,3 +330,59 @@ until its result is known. A status check that confirms failure opens retry;
 a check that still reports pending explicitly explains why retry is not available.
 An administrator's documented no-payment review can unblock an older unresolved
 attempt; the original financial record remains intact.
+
+The student M-Pesa retry action uses `retry-prompt`: it queries the previous
+request, returns an already-confirmed success without charging again, and creates
+a new attempt on confirmed failure or expiry. An identical idempotency key
+returns the same new attempt. Pending accepted requests, unavailable provider queries and missing references
+in live payments never trigger a second STK request. A stale sandbox attempt with
+no reference can be retired with an explicit audit event before retry. OAuth failures during
+initiation are definitive failures because no STK request has been sent. Hosted
+card success and cancellation URLs retain the order route.
+
+
+## Timely M-Pesa outcomes and exception recovery
+
+The workspace checks payment progress every five seconds for two minutes and
+retries temporary status-check connection failures. A token-authenticated callback
+with the matching CheckoutRequestID and a recognized final failure code marks the
+attempt unsuccessful immediately. It does not depend on a second query succeeding.
+A success callback validates the token, checkout reference, amount, phone number
+and unique receipt, then settles payment and releases the order atomically. Delayed
+failure callbacks cannot overwrite a confirmed success.
+
+The two-minute local expiry rule applies only when both the current environment
+and attempt are sandbox/test, no provider reference or transaction receipt exists,
+and there is no charge ledger, paid timestamp, refund or refunded amount. It logs
+`payment_test_expired`, retains the attempt and allows a new checkout attempt. It
+is not evidence of a provider failure and never applies to real funds or an
+acknowledged STK request.
+
+In production, unresolved requests appear in the platform finance exceptions
+filter (`GET /admin/finance/payments?attention_only=true`). A missing-reference
+request receives one `payment_recovery_required` event after the wait window. The
+existing no-payment review workflow requires provider investigation before a new
+charge. The customer sees one payment state and only actions supported by it.
+
+For automatic background recovery, use the Redis/Celery worker and scheduler in
+[background job setup](background-jobs.md). The standalone loop below remains an
+alternative for development; do not run it alongside Celery:
+
+```bash
+cd backend
+uv run python -m app.payment_worker --loop
+```
+
+The loop checks eligible pending requests every ten seconds, refreshes settled
+requests less frequently, and retires stale unacknowledged sandbox attempts. It
+never initiates a new charge. See [Safaricom's integration reference](https://www.safaricom.co.ke/images/Downloads/Tender_Documents/EOI_Safaricom_M-PESA_Integration_V1_002.pdf)
+for the separation between STK initiation, final callbacks and status queries.
+
+
+A recorded, validated M-Pesa success callback can be replayed from the private
+webhook inbox if an older handler left it pending after a status-query error.
+Receipt conflict checks and the unique charge ledger prevent double settlement.
+The browser reads stored status before asking for provider reconciliation, and
+reopens the order when confirmation advances it to submitted. Owner status checks
+return an already-confirmed M-Pesa success without a redundant provider query.
+Queries remain the fallback for absent callbacks and for back-office verification.
