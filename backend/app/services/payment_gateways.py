@@ -25,6 +25,10 @@ class GatewayRejected(Exception):
     public_reason = "The payment provider rejected the request. You can retry once the issue is resolved."
 
 
+class GatewayNotDispatched(GatewayRejected):
+    public_reason = "M-Pesa could not be reached. Retry payment."
+
+
 class GatewayAuthenticationRejected(GatewayRejected):
     public_reason = "M-Pesa authorization was rejected. TranscriptsKE must check its Daraja credentials before you retry."
 
@@ -119,6 +123,17 @@ def minor_amount(value):
         raise HTTPException(400, "Invalid callback amount") from exc
 
 
+MPESA_FINAL_FAILURES = {
+    "1": ("failed", "Insufficient M-Pesa balance. Top up and retry."),
+    "1025": ("failed", "M-Pesa could not complete the request. Retry payment."),
+    "1032": ("failed", "Payment cancelled. Retry when you are ready."),
+    "1037": ("failed", "The phone prompt timed out. Retry payment."),
+    "2001": ("failed", "M-Pesa authorization failed. Retry payment."),
+    "9999": ("failed", "M-Pesa could not complete the request. Retry payment."),
+    "1019": ("expired", "Payment request expired. Retry payment."),
+}
+
+
 class Gateways:
     def request(self, method, url, **kwargs):
         try:
@@ -160,8 +175,16 @@ class Gateways:
             if not isinstance(result, dict):
                 raise ValueError
             return result
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+            if method == "POST" and url in (
+                "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+                "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+            ):
+                # Connection/pool failures precede writing the STK request.
+                raise GatewayNotDispatched from exc
+            raise GatewayUnavailable from exc
         except (httpx.HTTPError, ValueError) as exc:
-            # A timeout or API error does not prove that a payment request was not accepted.
+            # Read/write timeouts do not prove that the payment request was not accepted.
             raise GatewayUnavailable from exc
 
     def stripe(self, method, path, **kwargs):
@@ -180,14 +203,23 @@ class Gateways:
             if settings.PAYMENT_MODE == "live"
             else "https://sandbox.safaricom.co.ke"
         )
-        token = self.request(
-            "GET",
-            base + "/oauth/v1/generate",
-            params={"grant_type": "client_credentials"},
-            auth=(settings.MPESA_CONSUMER_KEY, settings.MPESA_CONSUMER_SECRET),
-        )
-        if not isinstance(token.get("access_token"), str):
-            raise GatewayUnavailable
+        try:
+            token = self.request(
+                "GET",
+                base + "/oauth/v1/generate",
+                params={"grant_type": "client_credentials"},
+                auth=(settings.MPESA_CONSUMER_KEY, settings.MPESA_CONSUMER_SECRET),
+            )
+            if (
+                not isinstance(token.get("access_token"), str)
+                or not token["access_token"]
+            ):
+                raise GatewayUnavailable
+        except GatewayUnavailable as exc:
+            if path == "/mpesa/stkpush/v1/processrequest":
+                # No STK request was sent, so this attempt cannot have charged anyone.
+                raise GatewayAuthenticationRejected from exc
+            raise
         return self.request(
             "POST",
             base + path,
@@ -282,10 +314,9 @@ class Gateways:
                     "refunded_minor": payment.refunded_minor,
                 }
             # A correlated final STK result is distinct from an HTTP/network timeout.
-            if code == "1019":
-                return {"status": "expired", "refunded_minor": 0}
-            if code in {"1", "1025", "1032", "1037", "2001", "9999"}:
-                return {"status": "failed", "refunded_minor": 0}
+            if code in MPESA_FINAL_FAILURES:
+                status, reason = MPESA_FINAL_FAILURES[code]
+                return {"status": status, "refunded_minor": 0, "failure_reason": reason}
             return {"status": "pending", "refunded_minor": 0}
         data = self.stripe(
             "GET",
