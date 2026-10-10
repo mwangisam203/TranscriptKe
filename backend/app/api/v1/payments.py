@@ -25,6 +25,7 @@ from app.schemas.payments import PaymentCreate, RefundInput
 from app.services.academic import check_version
 from app.services.orders import digest, get_order, utcnow
 from app.services.payment_gateways import (
+    MPESA_FINAL_FAILURES,
     GatewayUnavailable,
     configured,
     get_gateways,
@@ -35,17 +36,20 @@ from app.services.payment_gateways import (
 )
 from app.services.payments import (
     aggregate_status,
+    apply_observation,
     consume_reversal,
     create_attempt,
     dispatch,
     dispatch_refund,
     eligibility,
+    expire_test_request,
     log,
     payment_for,
     provider_available,
     public_payment,
     reconcile,
     request_refund,
+    settle_received_mpesa_success,
 )
 from app.services.throttle import enforce_rate_limit
 
@@ -121,6 +125,62 @@ def retry_payment(
     )
 
 
+@router.post(OWN + "/{payment_id}/retry-prompt")
+def retry_mpesa_prompt(
+    request: Request,
+    order_id: Id,
+    payment_id: UUID,
+    idempotency_key: IdempotencyKey,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+    gateway=Depends(get_gateways),
+):
+    enforce_rate_limit(
+        db, request, "payment_start", str(user.id), account_limit=10, ip_limit=60
+    )
+    order = get_order(db, user, order_id, lock=True)
+    previous = payment_for(db, order, str(payment_id))
+    if previous.provider != "mpesa":
+        raise HTTPException(422, "This action is for M-Pesa prompts only")
+    # A replay returns the same reservation rather than sending a second prompt.
+    existing = db.scalar(
+        select(PaymentAttempt).where(
+            PaymentAttempt.order_id == order.id,
+            PaymentAttempt.idempotency_key == idempotency_key,
+        )
+    )
+    if existing:
+        if existing.provider != "mpesa" or existing.phone != previous.phone:
+            raise HTTPException(409, "This payment key was used with different details")
+        return public_payment(db, dispatch(db, user, order_id, existing.id, gateway))
+    expire_test_request(db, order, previous)
+    if previous.status in ("pending", "unknown", "initiating"):
+        if not previous.provider_reference:
+            raise HTTPException(
+                409,
+                "Payment confirmation is still in progress. Refresh payment status.",
+            )
+        previous = reconcile(db, order, previous, gateway)
+    if previous.status in ("succeeded", "partially_refunded", "refunded"):
+        return public_payment(db, previous)
+    if previous.status not in ("failed", "expired"):
+        raise HTTPException(
+            409,
+            "The previous prompt is still active. Complete or cancel it on your phone.",
+        )
+    order = get_order(db, user, order_id, lock=True)
+    payment = create_attempt(
+        db,
+        user,
+        order,
+        PaymentCreate(
+            expected_version=order.version, provider="mpesa", phone=previous.phone
+        ),
+        idempotency_key,
+    )
+    return public_payment(db, dispatch(db, user, order_id, payment.id, gateway))
+
+
 @router.post(OWN + "/{payment_id}/reconcile")
 def check_payment(
     request: Request,
@@ -135,7 +195,38 @@ def check_payment(
     )
     order = get_order(db, user, order_id, lock=True)
     payment = payment_for(db, order, payment_id)
+    if (
+        payment.provider == "mpesa"
+        and payment.status == "succeeded"
+        and payment.paid_at
+    ):
+        return public_payment(db, payment)
     return public_payment(db, reconcile(db, order, payment, gateway))
+
+
+@router.get(OWN + "/{payment_id}/receipt.pdf")
+def receipt_pdf(
+    order_id: Id,
+    payment_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_verified_user),
+):
+    from app.services.receipts import receipt_snapshot, render_pdf
+
+    order = get_order(db, user, order_id)
+    payment = payment_for(db, order, payment_id)
+    if not payment.paid_at:
+        raise HTTPException(
+            409, "A receipt is available only after provider confirmation"
+        )
+    return Response(
+        render_pdf(receipt_snapshot(db, order, payment)),
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="TranscriptsKE-{order.reference}-receipt.pdf"',
+        },
+    )
 
 
 @router.get(OWN + "/{payment_id}/receipt")
@@ -335,7 +426,7 @@ async def webhook_body(request):
     return bytes(data)
 
 
-def locked_system_payment(db, payment_id):
+def locked_system_payment(db, payment_id, *, require_provider=True):
     # The same institution -> order lock order used by registrar and student mutations.
     from app.models.institution import Institution
 
@@ -355,7 +446,8 @@ def locked_system_payment(db, payment_id):
         .execution_options(populate_existing=True)
     )
     payment = payment_for(db, order, payment_id)
-    provider_available(payment)
+    if require_provider:
+        provider_available(payment)
     return order, payment
 
 
@@ -442,7 +534,7 @@ async def stripe_webhook(
 
 
 def process_mpesa(db, payment_id, payload, gateway):
-    order, payment = locked_system_payment(db, payment_id)
+    order, payment = locked_system_payment(db, payment_id, require_provider=False)
     if payment.provider != "mpesa":
         raise HTTPException(400, "Wrong payment provider")
     try:
@@ -489,13 +581,32 @@ def process_mpesa(db, payment_id, payload, gateway):
         db,
         payment,
         digest({"payment_id": payment.id, "payload": payload}),
-        {"reference": ref, "receipt": receipt},
+        {
+            "reference": ref,
+            "receipt": receipt,
+            "result_code": str(callback["ResultCode"]),
+            "amount_minor": payment.amount_minor if receipt else None,
+            "phone_matches": bool(receipt),
+        },
     )
     if record.processed_at:
         return {"ResultCode": 0, "ResultDesc": "Accepted"}
-    order, payment = locked_system_payment(db, payment.id)
-    # A callback alone cannot mark the order paid; Daraja must confirm the known STK request.
-    reconcile(db, order, payment, gateway)
+    order, payment = locked_system_payment(db, payment.id, require_provider=False)
+    # A token-authenticated, correlated final failure is actionable immediately.
+    # A validated success receipt settles the order without a redundant status query.
+    code = str(callback["ResultCode"])
+    if code in MPESA_FINAL_FAILURES:
+        status, reason = MPESA_FINAL_FAILURES[code]
+        apply_observation(
+            db,
+            order,
+            payment,
+            {"status": status, "refunded_minor": 0, "failure_reason": reason},
+        )
+    elif receipt:
+        settle_received_mpesa_success(db, order, payment)
+    else:
+        reconcile(db, order, payment, gateway)
     if receipt and payment.status in ("succeeded", "refunded", "partially_refunded"):
         if payment.transaction_reference and payment.transaction_reference != receipt:
             raise HTTPException(409, "M-Pesa receipt mismatch")
