@@ -101,10 +101,8 @@ def workspace():
     mail_hint = ""
     if settings.APP_ENV == "development" and settings.MAIL_BACKEND == "file":
         mail_hint = (
-            '<p class="development-mail-hint"><strong>Local development email</strong><br>'
-            "No email is sent to your inbox in this mode. Verification and reset codes are saved as private email files in your "
-            "configured mail directory (default: <code>backend/.mailbox/</code>). "
-            "Open the email addressed to you and copy its code here.</p>"
+            '<p class="development-mail-hint"><strong>Need your code?</strong><br>'
+            "Email delivery is unavailable in this preview. Contact support for your verification or reset code.</p>"
         )
     content = (STATIC_DIRECTORY / "workspace.html").read_text(encoding="utf-8")
     return HTMLResponse(
