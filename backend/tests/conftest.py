@@ -5,6 +5,7 @@ from uuid import uuid4
 
 # Never connect tests to the developer's configured application database or mail provider.
 os.environ["APP_ENV"] = "test"
+os.environ["BACKGROUND_JOBS_ENABLED"] = "false"
 # Existing milestone regression fixtures exercise the original collection policy.
 # Upfront checkout tests explicitly select before_review.
 os.environ["PAYMENT_COLLECTION_POLICY"] = "after_review"
@@ -111,6 +112,13 @@ class FakeMailer:
                 "mode": mode,
             }
         )
+
+    def send_payment_receipt(self, email, snapshot, pdf):
+        if self.fail:
+            from fastapi import HTTPException
+
+            raise HTTPException(503, "Email delivery is unavailable; please try again")
+        self.messages.append({"email": email, "purpose": "payment_receipt", "snapshot": snapshot, "pdf": pdf})
 
     def token(self, purpose, email=None):
         return next(
