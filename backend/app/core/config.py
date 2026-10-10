@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     OPERATIONS_PAYMENT_PENDING_MINUTES: int = Field(default=30, ge=5, le=1440)
     OPERATIONS_NOTIFICATION_PENDING_MINUTES: int = Field(default=15, ge=5, le=1440)
     OPERATIONS_WORKER_STALE_MINUTES: int = Field(default=15, ge=5, le=1440)
+    BACKGROUND_JOBS_ENABLED: bool = False
+    REDIS_URL: str = "redis://127.0.0.1:6379/5"
+    JOB_BATCH_SIZE: int = Field(default=25, ge=1, le=100)
+    PAYMENT_JOB_INTERVAL_SECONDS: int = Field(default=10, ge=5, le=300)
+    DELIVERY_JOB_INTERVAL_SECONDS: int = Field(default=60, ge=10, le=3600)
 
     PAYMENT_COLLECTION_POLICY: Literal["before_review", "after_review"] = (
         "before_review"
@@ -55,6 +60,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_deployment(self):
+        from urllib.parse import urlsplit
+
+        broker = urlsplit(self.REDIS_URL)
+        if (
+            broker.scheme not in ("redis", "rediss")
+            or not broker.hostname
+            or broker.fragment
+        ):
+            raise ValueError("REDIS_URL must be a redis:// or rediss:// server URL")
         if self.ISSUANCE_ENABLED:
             from urllib.parse import urlsplit
 
