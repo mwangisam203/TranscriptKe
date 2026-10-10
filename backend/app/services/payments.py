@@ -63,14 +63,69 @@ def log(db, order, payment, kind, message, actor=None):
     event(db, order, actor, kind, message)
 
 
+MPESA_CONFIRMATION_SECONDS = 120
+
+
+def can_expire_test_request(db, payment):
+    """Only unacknowledged sandbox requests can be retired by our own clock."""
+    return (
+        settings.PAYMENT_MODE == "test"
+        and payment.mode == "test"
+        and payment.provider == "mpesa"
+        and payment.status in OPEN
+        and not payment.provider_reference
+        and not payment.paid_at
+        and not payment.transaction_reference
+        and not payment.refunded_minor
+        and utcnow() - aware(payment.created_at)
+        >= timedelta(seconds=MPESA_CONFIRMATION_SECONDS)
+        and db.scalar(
+            select(PaymentLedger.id)
+            .where(PaymentLedger.payment_id == payment.id)
+            .limit(1)
+        )
+        is None
+        and db.scalar(
+            select(PaymentRefund.id)
+            .where(PaymentRefund.payment_id == payment.id)
+            .limit(1)
+        )
+        is None
+    )
+
+
+def expire_test_request(db, order, payment):
+    if not can_expire_test_request(db, payment):
+        return False
+    payment.status = "expired"
+    payment.active_order_id = None
+    db.flush()
+    order.payment_status = aggregate_status(db, order)
+    log(
+        db,
+        order,
+        payment,
+        "payment_test_expired",
+        "Sandbox request timed out. Retry payment.",
+    )
+    return True
+
+
 def public_payment(db, payment):
     failure_reason = None
-    if payment.status == "failed":
+    if payment.status in ("failed", "expired"):
         failure_reason = db.scalar(
             select(PaymentEvent.message)
             .where(
                 PaymentEvent.payment_id == payment.id,
-                PaymentEvent.kind == "payment_rejected",
+                PaymentEvent.kind.in_(
+                    (
+                        "payment_rejected",
+                        "payment_failed",
+                        "payment_expired",
+                        "payment_test_expired",
+                    )
+                ),
             )
             .order_by(PaymentEvent.id.desc())
             .limit(1)
@@ -89,6 +144,15 @@ def public_payment(db, payment):
         "currency": payment.currency,
         "status": payment.status,
         "failure_reason": failure_reason,
+        "confirmation_delayed": payment.status in OPEN
+        and utcnow() - aware(payment.created_at)
+        >= timedelta(seconds=MPESA_CONFIRMATION_SECONDS),
+        "can_refresh": payment.provider == "mpesa" and payment.status in OPEN,
+        "can_retry_prompt": payment.provider == "mpesa"
+        and (
+            (payment.status in OPEN and bool(payment.provider_reference))
+            or can_expire_test_request(db, payment)
+        ),
         "can_check_status": bool(payment.provider_reference)
         and payment.status not in ("failed", "expired"),
         "can_resume": payment.status in OPEN
@@ -233,8 +297,8 @@ def create_attempt(db, user, order, payload, key):
             "client_reference_id": payment.id,
             "metadata[payment_id]": payment.id,
             "payment_intent_data[metadata][payment_id]": payment.id,
-            "success_url": origin + "/workspace?payment_return=1",
-            "cancel_url": origin + "/workspace?payment_cancel=1",
+            "success_url": origin + f"/workspace?payment_return=1#order/{order.id}",
+            "cancel_url": origin + f"/workspace?payment_cancel=1#order/{order.id}",
         }
         if settings.STRIPE_PUBLISHABLE_KEY:
             payment.request_data.pop("success_url")
@@ -456,31 +520,110 @@ def apply_observation(db, order, payment, observation):
         from app.services.orders import release_order
 
         release_order(db, order)
+    if payment.status == "succeeded" and previous[0] not in SETTLED:
+        from app.services.receipts import enqueue
+
+        enqueue(db, order, payment)
     if previous != (payment.status, payment.refunded_minor):
         log(
             db,
             order,
             payment,
             "payment_" + status,
-            "Provider-confirmed payment status: " + status.replace("_", " ") + ".",
+            observation.get("failure_reason")
+            or "Provider-confirmed payment status: " + status.replace("_", " ") + ".",
         )
 
 
+def settle_received_mpesa_success(db, order, payment):
+    """Replay a callback already authenticated and validated by the webhook handler."""
+    if payment.provider != "mpesa" or not payment.provider_reference:
+        return False
+    callbacks = db.scalars(
+        select(PaymentWebhook).where(
+            PaymentWebhook.payment_id == payment.id,
+            PaymentWebhook.provider == "mpesa",
+            PaymentWebhook.processed_at.is_(None),
+        )
+    ).all()
+    successes = [
+        entry
+        for entry in callbacks
+        if (
+            entry.payload.get("reference") == payment.provider_reference
+            and entry.payload.get("result_code") in (None, "0")
+            and isinstance(entry.payload.get("receipt"), str)
+            and entry.payload["receipt"].isalnum()
+            and 1 <= len(entry.payload["receipt"]) <= 30
+        )
+    ]
+    if not successes:
+        return False
+    # Older inbox entries contain a receipt only after amount and phone validation.
+    for entry in successes:
+        if (
+            entry.payload.get("amount_minor", payment.amount_minor)
+            != payment.amount_minor
+            or entry.payload.get("phone_matches", True) is not True
+        ):
+            raise HTTPException(409, "M-Pesa callback metadata mismatch")
+    receipts = {entry.payload["receipt"] for entry in successes}
+    if len(receipts) != 1 or (
+        payment.transaction_reference and payment.transaction_reference not in receipts
+    ):
+        raise HTTPException(409, "M-Pesa receipt mismatch requires investigation")
+    receipt = next(iter(receipts))
+    apply_observation(
+        db,
+        order,
+        payment,
+        {
+            "status": payment.status if payment.status in SETTLED else "succeeded",
+            "transaction_reference": receipt,
+            "refunded_minor": payment.refunded_minor,
+        },
+    )
+    for entry in successes:
+        entry.processed_at = utcnow()
+    db.flush()
+    return True
+
+
 def reconcile(db, order, payment, gateway):
+    if settle_received_mpesa_success(db, order, payment):
+        db.commit()
+        return payment
     if not payment.provider_reference and payment.status in ("failed", "expired"):
         # Definitive initiation refusals have nothing to query at the provider.
+        return payment
+    if payment.provider == "mpesa" and not payment.provider_reference:
+        if expire_test_request(db, order, payment):
+            db.commit()
+        elif payment.status in OPEN and utcnow() - aware(
+            payment.created_at
+        ) >= timedelta(seconds=MPESA_CONFIRMATION_SECONDS):
+            queued = db.scalar(
+                select(PaymentEvent.id)
+                .where(
+                    PaymentEvent.payment_id == payment.id,
+                    PaymentEvent.kind == "payment_recovery_required",
+                )
+                .limit(1)
+            )
+            if queued is None:
+                log(
+                    db,
+                    order,
+                    payment,
+                    "payment_recovery_required",
+                    "Payment confirmation delayed; queued for TranscriptsKE review.",
+                )
+                db.commit()
         return payment
     provider_available(payment)
     if not payment.provider_reference:
         raise HTTPException(
-            409,
-            "No provider reference was received. Recover the existing card checkout or ask "
-            + (
-                "TranscriptsKE support"
-                if payment.merchant_scope == "platform"
-                else "the institution"
-            )
-            + " to investigate; do not start another payment.",
+            409, "Recover the existing card checkout before checking its status."
         )
     if payment.provider_reference:
         try:
