@@ -15,6 +15,7 @@ from app.models.institution import Institution
 from app.models.issuance import DocumentDelivery, IssuedDocument
 from app.models.operations import WorkerRun
 from app.models.payments import PaymentAttempt
+from app.models.receipts import PaymentReceiptEmail
 from app.services.orders import utcnow
 from app.services.payment_gateways import configured, fingerprint
 
@@ -59,6 +60,14 @@ def report(db, *, live=False):
         if healthy
         else "Database unavailable or migrations are not at head; run alembic upgrade head.",
     )
+    if settings.BACKGROUND_JOBS_ENABLED:
+        from app.tasks import broker_ready
+
+        add(
+            "background_queue",
+            broker_ready(),
+            "Redis must be reachable. Scheduler and worker execution are checked through worker run history.",
+        )
     add(
         "secret",
         len(settings.SECRET_KEY) >= 32
@@ -186,6 +195,13 @@ def report(db, *, live=False):
         workers = []
         if settings.PAYMENTS_ENABLED or active_providers:
             workers.append("payments")
+        pending_receipts = db.scalar(
+            select(func.count())
+            .select_from(PaymentReceiptEmail)
+            .where(PaymentReceiptEmail.sent_at.is_(None))
+        )
+        if settings.PAYMENTS_ENABLED or pending_receipts:
+            workers.append("receipts")
         if settings.ISSUANCE_ENABLED or outstanding_deliveries:
             workers.append("deliveries")
         for worker in workers:
