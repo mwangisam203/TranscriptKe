@@ -120,6 +120,10 @@ remains responsible for reviewing the content and any original digital signature
 
 ## Notification worker
 
+Automatic delivery notification scheduling is now available through
+[Redis/Celery services](background-jobs.md). The command below remains a one-shot
+diagnostic alternative; do not schedule both mechanisms.
+
 ```bash
 uv run python -m app.delivery_worker --limit 100
 ```
