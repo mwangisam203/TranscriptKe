@@ -300,3 +300,24 @@ def test_review_cannot_override_a_provider_accepted_payment(
         user_factory("accepted-reviewer@example.com", role=UserRole.ADMIN)
     )
     assert client.post(url, headers=admin, json=body).status_code == 409
+
+
+def test_payment_exception_filter_excludes_a_fresh_prompt_and_shows_a_delay(
+    client, platform, gateway, user_factory, auth_headers, db
+):
+    from datetime import timedelta
+
+    from app.models.payments import PaymentAttempt
+    from app.services.orders import utcnow
+
+    submit(client, platform)
+    payment = checked(start(client, platform, "mpesa"), 201)
+    admin = user_factory("exceptions-admin@example.com", role=UserRole.ADMIN)
+    url = "/api/v1/admin/finance/payments?attention_only=true"
+    assert checked(client.get(url, headers=auth_headers(admin))) == []
+    model = db.get(PaymentAttempt, payment["id"])
+    model.created_at = utcnow() - timedelta(minutes=3)
+    db.commit()
+    exceptions = checked(client.get(url, headers=auth_headers(admin)))
+    assert [item["id"] for item in exceptions] == [payment["id"]]
+    assert exceptions[0]["confirmation_delayed"] is True
