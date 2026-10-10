@@ -1,9 +1,10 @@
+from datetime import timedelta
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.payments import overview
@@ -19,8 +20,10 @@ from app.schemas.academic import Id
 from app.schemas.common import StrictInput
 from app.schemas.payments import RefundInput
 from app.services.academic import check_version, lock_institution
+from app.services.orders import utcnow
 from app.services.payment_gateways import get_gateways
 from app.services.payments import (
+    MPESA_CONFIRMATION_SECONDS,
     aggregate_status,
     dispatch_refund,
     log,
@@ -97,6 +100,7 @@ def save_billing(
 @router.get("/finance/payments")
 def payments(
     institution_id: Id | None = None,
+    attention_only: bool = False,
     offset: int = Query(0, ge=0),
     limit: int = Query(30, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -109,6 +113,26 @@ def payments(
         .join(Institution, Institution.id == Order.institution_id)
         .where(PaymentAttempt.merchant_scope == "platform")
     )
+    if attention_only:
+        statement = statement.where(
+            or_(
+                PaymentAttempt.status == "unknown",
+                and_(
+                    PaymentAttempt.provider == "mpesa",
+                    PaymentAttempt.status.in_(("pending", "initiating")),
+                    PaymentAttempt.created_at
+                    <= utcnow() - timedelta(seconds=MPESA_CONFIRMATION_SECONDS),
+                ),
+                Order.payment_status.in_(
+                    (
+                        "review_required",
+                        "disputed",
+                        "refund_requested",
+                        "refund_pending",
+                    )
+                ),
+            )
+        )
     if institution_id:
         statement = statement.where(Order.institution_id == institution_id)
     return [
