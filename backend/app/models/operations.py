@@ -22,7 +22,9 @@ class OperationsCase(Base):
 class WorkerRun(Base):
     __tablename__ = "worker_runs"
     __table_args__ = (
-        CheckConstraint("worker IN ('payments','deliveries')", name="ck_worker_name"),
+        CheckConstraint(
+            "worker IN ('payments','deliveries','receipts')", name="ck_worker_name"
+        ),
         CheckConstraint(
             "status IN ('running','succeeded','failed')", name="ck_worker_status"
         ),
