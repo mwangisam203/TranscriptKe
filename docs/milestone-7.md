@@ -114,8 +114,10 @@ uv run python -m app.payment_worker --limit 100
 uv run python -m app.delivery_worker --limit 100
 ```
 
-Configure an external scheduler to run the required workers regularly, typically
-every minute, and alert on nonzero exits and stale/failed readiness checks. These
+The recommended scheduler is now Redis-backed Celery with automatic user services;
+see [background job setup](background-jobs.md). The commands above are one-shot
+diagnostic alternatives. Do not schedule them alongside Celery. Alert on stale or
+failed readiness checks. These
 commands perform their existing provider reconciliation and email work; the
 readiness command below does not execute either worker. Payment workers never
 initiate new charges; delivery retries preserve the existing delivery record.
