@@ -91,10 +91,21 @@ API access with Safaricom support. Do not copy access tokens into frontend code.
 
 The app marks recognized STK authorization refusals as failed, records a safe
 explanation, and permits a new payment attempt after configuration is corrected.
-A network timeout or unrecognized provider error stays uncertain. Old attempts
-with no provider reference are not silently reclassified or resent.
+A network timeout or unrecognized provider error stays uncertain. Live attempts with no provider reference require reconciliation. Unfunded sandbox
+attempts without a reference expire locally after two minutes with an audit event,
+and can then be retried. They are not labelled as provider-confirmed failures.
 
 `ERR_NGROK_3200` means the configured endpoint is offline. Run `ngrok http 8000`
 while the backend runs in another terminal. Set `PAYMENT_PUBLIC_URL` to the
 active forwarding URL and restart the backend. Verify that `PUBLIC_URL/health`
 returns the app's JSON health response before testing callbacks.
+
+
+For automatic scheduling and restart, use [Redis/Celery services](background-jobs.md).
+The standalone payment worker is an alternative and should not run alongside
+Celery. It can run continuously with
+`uv run python -m app.payment_worker --loop`. Keep the callback URL reachable while
+testing. The checkout checks progress every five seconds; a confirmed cancellation
+or failure immediately returns to payment. Stale sandbox requests without a
+CheckoutRequestID can be retired and retried without a support detour. Accepted
+requests are queried rather than expired by a local clock.
