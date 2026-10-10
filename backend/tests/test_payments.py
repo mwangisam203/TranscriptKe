@@ -335,7 +335,7 @@ def mpesa_callback(client, payment, payload, token=None):
     )
 
 
-def test_mpesa_requires_authenticated_matching_callback_and_provider_query(
+def test_mpesa_requires_authenticated_matching_callback_metadata(
     client, payable, gateway
 ):
     w = payable
@@ -353,8 +353,7 @@ def test_mpesa_requires_authenticated_matching_callback_and_provider_query(
     )
     checked(mpesa_callback(client, payment, mpesa_payload(payment)))
     assert (
-        checked(client.get(w["url"], headers=w["headers"]))["payment_status"]
-        == "pending"
+        checked(client.get(w["url"], headers=w["headers"]))["payment_status"] == "paid"
     )
     gateway.states[payment["id"]] = {"status": "succeeded", "refunded_minor": 0}
     checked(mpesa_callback(client, payment, mpesa_payload(payment)))
@@ -764,7 +763,7 @@ def test_mpesa_reversal_callback_can_arrive_before_acknowledgment(
     assert result["status"] == "refunded"
 
 
-def test_worker_reconciles_pending_callback_receipt_without_resending(
+def test_worker_reconciles_confirmed_callback_receipt_without_resending(
     client, payable, gateway, engine, monkeypatch
 ):
     from app import payment_worker
@@ -1083,3 +1082,354 @@ def test_mpesa_authorization_failure_allows_retry_without_releasing_order(
         start(client, payable, "mpesa", key="retry-after-auth-refusal"), 201
     )
     assert second["id"] != first["id"] and second["status"] == "pending"
+
+
+@pytest.mark.parametrize("outcome", ["failed", "expired"])
+def test_retry_prompt_checks_previous_attempt_and_replays_one_new_prompt(
+    client, payable, gateway, outcome
+):
+    previous = checked(start(client, payable, provider="mpesa"), 201)
+    gateway.states[previous["id"]] = {"status": outcome, "refunded_minor": 0}
+    url = payable["pay_url"] + f"/{previous['id']}/retry-prompt"
+    headers = {**payable["headers"], "Idempotency-Key": "retry-checked-prompt"}
+    first = checked(client.post(url, headers=headers))
+    replay = checked(client.post(url, headers=headers))
+    assert first["id"] != previous["id"]
+    assert first["id"] == replay["id"]
+    assert gateway.starts == [previous["id"], first["id"]]
+
+
+@pytest.mark.parametrize("unavailable", [False, True])
+def test_retry_prompt_does_not_resend_pending_or_unverifiable_payment(
+    client, payable, gateway, unavailable
+):
+    gateway.fail_start = unavailable
+    previous = checked(start(client, payable, provider="mpesa"), 201)
+    response = client.post(
+        payable["pay_url"] + f"/{previous['id']}/retry-prompt",
+        headers={**payable["headers"], "Idempotency-Key": "retry-unconfirmed-prompt"},
+    )
+    assert response.status_code == 409
+    assert gateway.starts == [previous["id"]]
+
+
+def test_retry_prompt_detects_success_without_sending_another_prompt(
+    client, payable, gateway
+):
+    previous = checked(start(client, payable, provider="mpesa"), 201)
+    gateway.states[previous["id"]] = {
+        "status": "succeeded",
+        "refunded_minor": 0,
+        "transaction_reference": "RETRYSUCCESS",
+    }
+    result = checked(
+        client.post(
+            payable["pay_url"] + f"/{previous['id']}/retry-prompt",
+            headers={**payable["headers"], "Idempotency-Key": "retry-paid-prompt"},
+        )
+    )
+    assert result["status"] == "succeeded"
+    assert gateway.starts == [previous["id"]]
+
+
+def test_mpesa_oauth_failure_is_safe_to_retry_before_stk_dispatch(monkeypatch):
+    from app.services.payment_gateways import GatewayAuthenticationRejected, Gateways
+
+    calls = []
+
+    def request(self, method, url, **kwargs):
+        calls.append((method, url))
+        raise GatewayUnavailable
+
+    monkeypatch.setattr(Gateways, "request", request)
+    with pytest.raises(GatewayAuthenticationRejected):
+        Gateways().mpesa("/mpesa/stkpush/v1/processrequest", {})
+    assert len(calls) == 1
+    assert calls[0][0] == "GET"
+    with pytest.raises(GatewayUnavailable):
+        Gateways().mpesa("/mpesa/stkpushquery/v1/query", {})
+
+
+def test_stale_sandbox_request_can_be_retired_and_retried_once(
+    client, payable, gateway, db
+):
+    from datetime import timedelta
+
+    from app.models.payments import PaymentEvent
+
+    gateway.fail_start = True
+    previous = checked(start(client, payable, "mpesa"), 201)
+    model = db.get(PaymentAttempt, previous["id"])
+    model.created_at = utcnow() - timedelta(minutes=3)
+    db.commit()
+    gateway.fail_start = False
+    headers = {**payable["headers"], "Idempotency-Key": "retire-sandbox-and-retry"}
+    url = payable["pay_url"] + f"/{previous['id']}/retry-prompt"
+    fresh = checked(client.post(url, headers=headers))
+    replay = checked(client.post(url, headers=headers))
+    db.refresh(model)
+    assert model.status == "expired"
+    assert model.active_order_id is None
+    assert fresh["id"] == replay["id"] != previous["id"]
+    assert gateway.starts == [previous["id"], fresh["id"]]
+    assert (
+        db.scalar(
+            select(PaymentEvent.id).where(
+                PaymentEvent.payment_id == model.id,
+                PaymentEvent.kind == "payment_test_expired",
+            )
+        )
+        is not None
+    )
+    assert (
+        db.scalar(select(PaymentLedger.id).where(PaymentLedger.payment_id == model.id))
+        is None
+    )
+
+
+@pytest.mark.parametrize("guard", ["live", "accepted", "ledger", "paid", "refund"])
+def test_sandbox_clock_cannot_retire_real_accepted_or_funded_requests(
+    client, payable, gateway, db, monkeypatch, guard
+):
+    from datetime import timedelta
+
+    from app.services.payments import expire_test_request
+
+    gateway.fail_start = True
+    previous = checked(start(client, payable, "mpesa"), 201)
+    model = db.get(PaymentAttempt, previous["id"])
+    model.created_at = utcnow() - timedelta(days=1)
+    if guard == "live":
+        model.mode = "live"
+        monkeypatch.setattr(settings, "PAYMENT_MODE", "live")
+    elif guard == "accepted":
+        model.provider_reference = "ws_accepted"
+    elif guard == "ledger":
+        db.add(
+            PaymentLedger(
+                payment_id=model.id, entry_key="charge", amount_minor=model.amount_minor
+            )
+        )
+    elif guard == "paid":
+        model.paid_at = utcnow()
+    else:
+        db.add(
+            PaymentRefund(
+                payment_id=model.id,
+                order_id=model.order_id,
+                requested_by=payable["user"].id,
+                reason="Review",
+                amount_minor=model.amount_minor,
+            )
+        )
+    db.commit()
+    assert not expire_test_request(db, db.get(Order, model.order_id), model)
+    assert model.status == "unknown"
+
+
+def test_final_failure_callback_unlocks_retry_even_when_query_is_unavailable(
+    client, payable, gateway
+):
+    previous = checked(start(client, payable, "mpesa"), 201)
+    gateway.fail_observe = True
+    payload = {
+        "Body": {
+            "stkCallback": {
+                "CheckoutRequestID": "ws_" + previous["id"],
+                "ResultCode": 1032,
+                "ResultDesc": "Cancelled",
+            }
+        }
+    }
+    checked(mpesa_callback(client, previous, payload))
+    attempts = checked(client.get(payable["pay_url"], headers=payable["headers"]))[
+        "attempts"
+    ]
+    assert attempts[-1]["status"] == "failed"
+    assert "cancelled" in attempts[-1]["failure_reason"]
+    assert (
+        checked(start(client, payable, "mpesa", key="after-cancel"), 201)["status"]
+        == "pending"
+    )
+
+
+def test_failure_callback_cannot_overwrite_confirmed_payment(client, payable, gateway):
+    previous = checked(start(client, payable, "mpesa"), 201)
+    settle(client, payable, gateway, previous)
+    payload = {
+        "Body": {
+            "stkCallback": {
+                "CheckoutRequestID": "ws_" + previous["id"],
+                "ResultCode": 1032,
+            }
+        }
+    }
+    checked(mpesa_callback(client, previous, payload))
+    attempts = checked(client.get(payable["pay_url"], headers=payable["headers"]))[
+        "attempts"
+    ]
+    assert attempts[-1]["status"] == "succeeded"
+
+
+def test_worker_retires_missing_reference_sandbox_attempt_without_new_prompt(
+    client, payable, gateway, db, engine, monkeypatch
+):
+    from datetime import timedelta
+
+    from app import payment_worker
+
+    monkeypatch.setattr(payment_worker, "engine", engine)
+    monkeypatch.setattr(payment_worker, "get_gateways", lambda: gateway)
+    gateway.fail_start = True
+    previous = checked(start(client, payable, "mpesa"), 201)
+    model = db.get(PaymentAttempt, previous["id"])
+    model.created_at = utcnow() - timedelta(minutes=3)
+    model.account_fingerprint = "retired-test-credentials"
+    db.commit()
+    payment_worker.run()
+    db.refresh(model)
+    assert model.status == "expired"
+    assert gateway.starts == [previous["id"]]
+
+
+def test_delayed_live_request_is_queued_once_and_is_not_recharged(
+    client, payable, gateway, db, monkeypatch
+):
+    from datetime import timedelta
+
+    from app.models.payments import PaymentEvent
+
+    gateway.fail_start = True
+    previous = checked(start(client, payable, "mpesa"), 201)
+    model = db.get(PaymentAttempt, previous["id"])
+    model.mode = "live"
+    model.created_at = utcnow() - timedelta(minutes=3)
+    db.commit()
+    monkeypatch.setattr(settings, "PAYMENT_MODE", "live")
+    url = payable["pay_url"] + f"/{previous['id']}/reconcile"
+    for _ in range(2):
+        result = checked(client.post(url, headers=payable["headers"]))
+        assert result["status"] == "unknown"
+        assert result["confirmation_delayed"] is True
+        assert result["can_retry_prompt"] is False
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(PaymentEvent)
+            .where(
+                PaymentEvent.payment_id == model.id,
+                PaymentEvent.kind == "payment_recovery_required",
+            )
+        )
+        == 1
+    )
+    assert gateway.starts == [previous["id"]]
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["ConnectError", "ConnectTimeout", "PoolTimeout", "ReadTimeout", "WriteTimeout"],
+)
+def test_stk_connection_failures_can_retry_but_lost_responses_remain_uncertain(
+    monkeypatch, kind
+):
+    import httpx
+
+    from app.services.payment_gateways import GatewayNotDispatched
+
+    original_client = httpx.Client
+
+    def fail(request):
+        raise getattr(httpx, kind)("test transport failure", request=request)
+
+    transport = httpx.MockTransport(fail)
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kwargs: original_client(transport=transport, **kwargs)
+    )
+    expected = (
+        GatewayNotDispatched
+        if kind in ("ConnectError", "ConnectTimeout", "PoolTimeout")
+        else GatewayUnavailable
+    )
+    with pytest.raises(expected):
+        Gateways().request(
+            "POST",
+            "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+            json={},
+        )
+
+
+def test_success_callback_settles_once_without_calling_a_broken_query(
+    client, payable, gateway, db
+):
+    previous = checked(start(client, payable, "mpesa"), 201)
+
+    def broken_query(payment):
+        raise AssertionError("A valid success callback must not need a status query")
+
+    gateway.observe = broken_query
+    payload = mpesa_payload(previous)
+    checked(mpesa_callback(client, previous, payload))
+    checked(mpesa_callback(client, previous, payload))
+    result = checked(client.get(payable["url"], headers=payable["headers"]))
+    assert result["payment_status"] == "paid"
+    assert (
+        checked(
+            client.post(
+                payable["pay_url"] + f"/{previous['id']}/reconcile",
+                headers=payable["headers"],
+            )
+        )["status"]
+        == "succeeded"
+    )
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(PaymentLedger)
+            .where(
+                PaymentLedger.payment_id == previous["id"],
+                PaymentLedger.entry_key == "charge",
+            )
+        )
+        == 1
+    )
+    assert db.get(PaymentAttempt, previous["id"]).transaction_reference == "ABC123XYZ"
+
+
+def test_saved_validated_success_is_replayed_when_status_query_is_down(
+    client, payable, gateway, db
+):
+    from app.models.payments import PaymentWebhook
+
+    previous = checked(start(client, payable, "mpesa"), 201)
+    # The previous handler validated and persisted this receipt before its query failed.
+    db.add(
+        PaymentWebhook(
+            provider="mpesa",
+            event_key="stored-valid-success",
+            payment_id=previous["id"],
+            payload={
+                "reference": "ws_" + previous["id"],
+                "receipt": "RECOVERSUCCESS",
+                "result_code": "0",
+                "amount_minor": previous["amount_minor"],
+                "phone_matches": True,
+            },
+        )
+    )
+    db.commit()
+    gateway.fail_observe = True
+    result = checked(
+        client.post(
+            payable["pay_url"] + f"/{previous['id']}/reconcile",
+            headers=payable["headers"],
+        )
+    )
+    assert result["status"] == "succeeded"
+    assert (
+        checked(client.get(payable["url"], headers=payable["headers"]))[
+            "payment_status"
+        ]
+        == "paid"
+    )
+    assert gateway.starts == [previous["id"]]
