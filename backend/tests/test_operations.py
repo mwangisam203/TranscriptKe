@@ -395,9 +395,10 @@ def test_readiness_masks_secrets_and_checks_worker_freshness(
         )
     )
     db.add(WorkerRun(worker="payments", status="succeeded", finished_at=utcnow()))
+    db.add(WorkerRun(worker="receipts", status="succeeded", finished_at=utcnow()))
     db.commit()
     assert report(db)["configuration_ready"]
-    run = db.scalar(select(WorkerRun))
+    run = db.scalar(select(WorkerRun).where(WorkerRun.worker == "payments"))
     run.finished_at = utcnow() - timedelta(hours=1)
     db.commit()
     assert not report(db)["configuration_ready"]
