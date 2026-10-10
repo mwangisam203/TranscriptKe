@@ -53,6 +53,37 @@ class Mailer:
         )
         self._deliver(message)
 
+    def send_payment_receipt(self, email: str, snapshot: dict, pdf: bytes) -> None:
+        from app.services.receipts import NEXT_STEPS, NOTICE, detail_lines
+
+        message = EmailMessage()
+        message["From"] = settings.MAIL_FROM
+        message["To"] = email
+        label = "TEST — " if snapshot["mode"] == "test" else ""
+        message["Subject"] = (
+            f"{label}TranscriptsKE: order {snapshot['order_reference']} confirmed"
+        )
+        message["Message-ID"] = (
+            f"<receipt-{snapshot['payment_id']}@transcriptske.example>"
+        )
+        message.set_content(
+            f"Hello {snapshot['payer_name']},\n\n"
+            + (
+                "This is a test payment. No real funds were received.\n\n"
+                if label
+                else "Your payment is confirmed.\n\n"
+            )
+            + "\n".join(detail_lines(snapshot))
+            + f"\n\nYour PDF receipt is attached.\n\n{NEXT_STEPS}\n\n{NOTICE}\n"
+        )
+        message.add_attachment(
+            pdf,
+            maintype="application",
+            subtype="pdf",
+            filename=f"TranscriptsKE-{snapshot['order_reference']}-receipt.pdf",
+        )
+        self._deliver(message)
+
     def _deliver(self, message):
         try:
             if settings.MAIL_BACKEND == "file":
