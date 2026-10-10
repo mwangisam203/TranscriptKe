@@ -19,7 +19,7 @@ def test_fresh_database_matches_models_and_can_roundtrip(engine):
     with engine.begin() as connection:
         config = migration_config(connection)
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0017"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0018"
         )
         command.check(config)
         command.downgrade(config, "base")
@@ -199,7 +199,7 @@ def test_local_mail_help_only_shown_for_development_file_delivery(
     monkeypatch.setattr(settings, "MAIL_BACKEND", mail_backend)
     response = client.get("/workspace")
     assert response.status_code == 200
-    assert ("<strong>Local development email</strong>" in response.text) is visible
+    assert ("<strong>Need your code?</strong>" in response.text) is visible
     assert settings.SECRET_KEY not in response.text
     assert response.headers["Cache-Control"] == "no-store"
     assert "script-src 'self'" in response.headers["Content-Security-Policy"]
