@@ -49,3 +49,7 @@ media/
 # Local development emails contain one-time secrets
 backend/.mailbox/
 *.sqlite3
+
+# Celery scheduler state (not application data).
+backend/.jobs/
+celerybeat-schedule*
